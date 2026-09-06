@@ -1,0 +1,50 @@
+[
+  {
+    "id": "sfu-buildings",
+    "url": "https://viewsfu-prd.its.sfu.ca/fsgis/rest/services/Vertisee/Vertisee_BuildingFloorplan_P_2020/MapServer/1",
+    "queryBounds": "504800,5457550,507150,5458900",
+    "crs": "EPSG:26910",
+    "retrievedAt": "2026-09-05T15:03:05.704947+00:00",
+    "features": 77,
+    "sha256": "4c00c58e61fd6608086f54acf600e1f90f93e5bd44246e51a1f6e0848f8562dc"
+  },
+  {
+    "id": "sfu-contours-2018",
+    "url": "https://viewsfu-prd.its.sfu.ca/fsgis/rest/services/Vertisee/Vertisee_Contour2018/MapServer/0",
+    "queryBounds": "504800,5457550,507150,5458900",
+    "crs": "EPSG:26910",
+    "retrievedAt": "2026-09-05T15:03:16.909390+00:00",
+    "features": 2281,
+    "sha256": "c3327fcfee9a1c6bedd0f4a586f4cff7c87b7bf0859a1ce8050f6d2c68ca9936"
+  },
+  {
+    "id": "burnaby-buildings",
+    "url": "https://gis.burnaby.ca/arcgis/rest/services/OpenData/OpenData4/MapServer/18",
+    "queryBounds": "504800,5457550,507150,5458900",
+    "crs": "EPSG:26910",
+    "retrievedAt": "2026-09-05T15:03:05.625331+00:00",
+    "features": 193,
+    "sha256": "f0c2658fe97f95dc47849046a33c6d3df8603b31eb9b8df9f842d6817caf6858"
+  },
+  {
+    "id": "burnaby-contours-2018",
+    "url": "https://gis.burnaby.ca/arcgis/rest/services/OpenData/OpenData3/MapServer/14",
+    "queryBounds": "504800,5457550,507150,5458900",
+    "crs": "EPSG:26910",
+    "retrievedAt": "2026-09-05T15:03:07.952779+00:00",
+    "features": 203,
+    "sha256": "e09bf4d68b25887fbf139a1bece394840df373f885b60b012f1ebf895fcae486"
+  },
+  {
+    "id": "burnaby-orthophoto-2025",
+    "url": "https://gis.burnaby.ca/arcgis/rest/services/Burnaby_Ortho_2025/MapServer",
+    "queryBounds": "504800,5457550,507150,5458900",
+    "crs": "EPSG:26910",
+    "size": [
+      4096,
+      2353
+    ],
+    "retrievedAt": "2026-09-05T15:03:22.836731+00:00",
+    "sha256": "4a2dc4d23082ef79349cb5bdc33fe56505bb13a860f4888950a989a029d3f218"
+  }
+]

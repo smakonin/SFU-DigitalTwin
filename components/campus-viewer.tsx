@@ -1,0 +1,31 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import * as THREE from 'three';
+import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
+import {assetPath} from '@/lib/runtime-mode';
+import {createCampusModel} from '@/lib/model';
+import type {Campus,Terrain} from '@/lib/campus-types';
+export default function CampusViewer({campus,selected,onSelect,aerial,context,view,reset}:{campus:Campus;selected:string;onSelect:(id:string)=>void;aerial:boolean;context:boolean;view:string;reset:number}){
+ const host=useRef<HTMLDivElement>(null);const api=useRef<any>(null);const select=useRef(onSelect);select.current=onSelect;const [error,setError]=useState('');
+ useEffect(()=>{
+  let dead=false,frame=0;const el=host.current!;let dispose=()=>{};
+  fetch(assetPath('data/terrain.json')).then(r=>{if(!r.ok)throw Error('Terrain could not load.');return r.json() as Promise<Terrain>}).then((terrain:Terrain)=>{
+   if(dead)return;const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor('#0d1c24');renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;el.appendChild(renderer.domElement);renderer.domElement.setAttribute('aria-label','Interactive SFU campus model. Select buildings in the list for keyboard access.');
+   const scene=new THREE.Scene();scene.fog=new THREE.Fog('#0d1c24',3500,7500);const camera=new THREE.PerspectiveCamera(42,1,1,12000);camera.position.set(1300,1400,1600);
+   const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=35;controls.maxDistance=4500;controls.maxPolarAngle=Math.PI/2.07;controls.target.set(150,40,0);
+   scene.add(new THREE.HemisphereLight('#e8f6ff','#3b5752',2.4));const sun=new THREE.DirectionalLight('#fff0d8',3);sun.position.set(-700,1400,500);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-1500,right:1500,top:1100,bottom:-1100,far:4000});sun.shadow.bias=-.0003;scene.add(sun);
+   const model=createCampusModel(campus,terrain);scene.add(model.root);const grid=new THREE.GridHelper(5000,50,'#29414b','#192e38');grid.position.y=-170;scene.add(grid);let texture:THREE.Texture|null=null;
+   const ray=new THREE.Raycaster();const mouse=new THREE.Vector2();let down=[0,0];
+   const pointerDown=(e:PointerEvent)=>{down=[e.clientX,e.clientY];};const pointerUp=(e:PointerEvent)=>{if(Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const rect=el.getBoundingClientRect();mouse.set((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(model.buildings.children,true).find(h=>h.object instanceof THREE.Mesh&&h.object.parent?.visible);if(hit)select.current(hit.object.userData.id);};renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointerup',pointerUp);
+   const resize=()=>{camera.aspect=el.clientWidth/el.clientHeight;camera.updateProjectionMatrix();renderer.setSize(el.clientWidth,el.clientHeight);};const observer=new ResizeObserver(resize);observer.observe(el);resize();
+   api.current={...model,camera,controls,texture,aerial:false,context:true,selected:'',style(){const a=api.current;if(!a)return;const mat=model.land.material as THREE.MeshStandardMaterial;mat.map=a.aerial?a.texture:null;mat.color.set(a.aerial?'#ffffff':'#466d68');mat.needsUpdate=true;for(const group of model.buildings.children){const b=campus.buildings.find(b=>b.id===group.userData.id)!;group.visible=b.source==='sfu'||a.context;for(const child of group.children)if(child instanceof THREE.Mesh){child.material.color.set(b.id===a.selected?'#ea534e':b.source==='sfu'?'#c8ddd9':'#778c8b');child.material.emissive.set(b.id===a.selected?'#36120e':'#000000');}}}};
+   new THREE.TextureLoader().load(assetPath('data/aerial-2025.jpg'),t=>{if(dead){t.dispose();return;}t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=renderer.capabilities.getMaxAnisotropy();texture=t;api.current.texture=t;api.current.style();},undefined,()=>setError('Aerial imagery unavailable; the terrain model remains usable.'));
+   const render=()=>{controls.update();renderer.render(scene,camera);frame=requestAnimationFrame(render);};render();dispose=()=>{observer.disconnect();controls.dispose();texture?.dispose();scene.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.LineSegments){o.geometry?.dispose();(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose());}});renderer.dispose();renderer.domElement.remove();api.current=null;};
+  }).catch(e=>{if(!dead)setError(e.message||'WebGL is unavailable. Enable hardware acceleration in your browser.');});
+  return()=>{dead=true;cancelAnimationFrame(frame);dispose();};
+ },[campus]);
+ useEffect(()=>{let frame:number;const apply=()=>{const a=api.current;if(!a){frame=requestAnimationFrame(apply);return;}a.aerial=aerial;a.context=context;a.selected=selected;a.style();};apply();return()=>cancelAnimationFrame(frame);},[selected,aerial,context,campus]);
+ useEffect(()=>{const a=api.current;if(!a)return;const b=campus.buildings.find(b=>b.id===selected);if(!b)return;const center=new THREE.Vector3(...b.center);a.controls.target.copy(center);a.camera.position.copy(center).add(new THREE.Vector3(200,230,280));},[selected,campus]);
+ useEffect(()=>{const a=api.current;if(!a)return;a.controls.target.set(150,40,0);if(view==='plan')a.camera.position.set(150,2200,.1);else a.camera.position.set(1300,1400,1600);},[view,reset]);
+ return <div className="model-host" ref={host}>{error&&<div className="model-error" role="status">{error}</div>}</div>;
+}
