@@ -64,3 +64,12 @@ test('disconnect suppresses an in-flight private response',async t=>{
   const reading=s.request('/v1/energy?code=004',{headers});await ready;
   await s.request('/v1/session',{method:'DELETE',headers});complete();assert.equal((await reading).status,401);
 });
+test('local relay page permits only approved viewers and same-origin authenticated reads',async t=>{
+  const s=await setup(t), nonce='12345678-1234-1234-1234-123456789abc';
+  const page=await fetch(s.base+'/relay?viewer='+encodeURIComponent(origin)+'&nonce='+nonce);assert.equal(page.status,200);assert.equal(page.headers.get('access-control-allow-origin'),null);
+  assert.equal((await fetch(s.base+'/relay?viewer=https://untrusted.example&nonce='+nonce)).status,403);
+  const session=await s.request('/v1/session',{method:'POST',headers:{Origin:s.base,'Content-Type':'application/json'},body:JSON.stringify({code:await s.code()})});assert.equal(session.status,201);const {token}=await session.json();
+  const headers={Authorization:'Bearer '+token,'Sec-Fetch-Site':'same-origin'};
+  assert.equal((await fetch(s.base+'/v1/energy?code=004',{headers})).status,200);
+  assert.equal((await s.request('/v1/energy?code=004',{headers:{Authorization:'Bearer '+token}})).status,401);
+});

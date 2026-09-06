@@ -1,10 +1,11 @@
 import http from 'node:http';
 import {randomBytes, timingSafeEqual} from 'node:crypto';
+import {relayPage} from './relay-page.mjs';
 import {readBuilding} from '../lib/foreseer.ts';
 
 const randomToken = () => randomBytes(24).toString('base64url');
 const sameSecret = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-export const DEFAULT_ORIGINS = ['https://smakonin.github.io', 'http://127.0.0.1:4173', 'http://localhost:4173', 'http://127.0.0.1:3000', 'http://localhost:3000'];
+export const DEFAULT_ORIGINS = ['https://makonin.com', 'https://smakonin.github.io', 'http://127.0.0.1:4173', 'http://localhost:4173', 'http://127.0.0.1:3000', 'http://localhost:3000'];
 
 export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read = readBuilding, now = Date.now, pairingLifetimeMs = 600_000, sessionLifetimeMs = 28_800_000, cacheLifetimeMs = 60_000}) {
   const origins = new Set(allowedOrigins.map(value => {
@@ -23,9 +24,15 @@ export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read 
     try {
       const ownOrigin = `http://127.0.0.1:${port}`;
       if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, {error:'Host not allowed.'});
-      const origin = req.headers.origin;
+      const origin = req.headers.origin || (req.headers['sec-fetch-site'] === 'same-origin' ? ownOrigin : undefined);
       const url = new URL(req.url, ownOrigin);
       if (url.origin !== ownOrigin || url.username || url.password) return send(res, 400, {error:'Invalid request.'});
+      if (url.pathname === '/relay') {
+        const viewerOrigin=url.searchParams.get('viewer'), nonce=url.searchParams.get('nonce');
+        if(req.method!=='GET'||!origins.has(viewerOrigin)||!nonce||!/^[a-f0-9-]{36}$/.test(nonce))return send(res,403,{error:'Unapproved relay request.'});
+        const scriptNonce=randomToken();
+        return send(res,200,relayPage(viewerOrigin,nonce,scriptNonce),{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; style-src 'nonce-${scriptNonce}'; script-src 'nonce-${scriptNonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,'X-Frame-Options':'DENY'});
+      }
       if (url.pathname === '/' || url.pathname === '/pairing/new') {
         // This page is visible only through a direct loopback navigation. It never enables CORS.
         if (origin && origin !== ownOrigin) return send(res, 403, {error:'Origin not allowed.'});
@@ -39,7 +46,7 @@ export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read 
         const nonce = randomToken();
         return send(res, 200, pairingPage(pairing.code, nonce), {'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,'X-Frame-Options':'DENY'});
       }
-      if (!origin || !origins.has(origin)) return send(res, 403, {error:'Viewer origin not allowed.'});
+      if (!origin || (!origins.has(origin) && origin !== ownOrigin)) return send(res, 403, {error:'Viewer origin not allowed.'});
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       const methods = url.pathname === '/v1/session' ? ['POST','DELETE'] : url.pathname === '/v1/energy' ? ['GET'] : [];

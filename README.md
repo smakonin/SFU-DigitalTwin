@@ -1,6 +1,6 @@
 # SFU Burnaby Campus Twin
 
-An interactive 3D campus model with optional private live energy readings. The static viewer can run on GitHub Pages. A separate read-only connector on the viewer’s computer uses its SFU campus or VPN connection.
+An interactive 3D campus model with optional private live energy readings. The static viewer is hosted on [GitHub Pages](https://makonin.com/SFU-DigitalTwin/). A separate read-only connector on the viewer’s computer uses its SFU campus or VPN connection.
 
 The model contains 77 official SFU features, 127 surrounding footprints, contour-derived terrain and Burnaby 2025 aerial imagery. Heights and roofs are approximate exterior massing. The supplied official SFU logo is in `public/brand/`.
 
@@ -15,7 +15,7 @@ pnpm start:twin
 
 If Node and pnpm are not on PATH on this computer, run `sh scripts/start-local.sh`; it can use the bundled local runtime.
 
-Open the viewer at **http://127.0.0.1:4173/SFU-DigitalTwin/**. Select **Connect live data**, open the local connector page, copy its temporary code and choose **Pair this tab**. Allow local network access if the browser asks. Select a building to see its configured readings. Stop the terminal process with Ctrl+C to stop both services.
+Open the viewer at **http://127.0.0.1:4173/SFU-DigitalTwin/**. Select **Connect live data**, open the local connector page, copy its temporary code and choose **Pair this tab**. Pairing opens a small local connection window. Minimize that window and keep it open. Select a building to see its configured readings. Stop the terminal process with Ctrl+C to stop both services.
 
 The code is single-use and expires after 10 minutes. A paired session lasts up to eight hours, stays in that tab’s memory and clears on reload. **Disconnect live data** immediately removes displayed readings and revokes the session. The connector must remain running, and its computer must retain SFU network access.
 
@@ -36,7 +36,7 @@ For development with the existing server framework, use `pnpm dev --host 127.0.0
 
 ## Public interface, private connection
 
-The static output in `dist-pages/` contains geometry, source metadata and frontend code. Internal source addresses, device mappings, pairing codes and readings are not build inputs. The browser calls `http://127.0.0.1:8787` directly; the web host never relays energy requests.
+The static output in `dist-pages/` contains geometry, source metadata and frontend code. Internal source addresses, device mappings, pairing codes and readings are not build inputs. The viewer opens a local connection window at `http://127.0.0.1:8787`. That window makes same-origin requests to the connector and passes results to its paired opener using messages checked against the viewer origin, window identity and connection nonce. This works with Safari’s HTTPS restrictions; the web host never relays energy requests.
 
 The connector binds only to `127.0.0.1`. It checks the HTTP Host, viewer origin and session token. It serves a fixed read-only energy operation for a public building code; clients cannot select source URLs, arbitrary channels or write commands. Responses use `Cache-Control: no-store`. Sessions and recent readings are held in memory, and request bodies, tokens, source names and readings are not logged.
 

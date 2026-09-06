@@ -43,7 +43,7 @@ The read-only connector is adapted from the supplied legacy energy client. Its p
 - Each channel must return the configured device, demand measurement name and kW units. Mismatches, blank and non-finite values become unavailable rather than zero. Non-Normal quality is flagged.
 - The UI keeps up to 60 observations per channel in tab memory. Foreseer does not provide a sensor sample timestamp through this interface: `observedAt` is the retrieval time and `sampledAt` stays null. Observations older than two minutes are marked stale.
 - Readings are never summed into building or campus totals because the electrical hierarchy and coverage are not yet validated.
-- The static host does not receive operational readings. Browser-to-loopback access is subject to browser CORS, mixed-content and local-network rules. The VPN runs on the connector’s computer.
+- The static host does not receive operational readings. A paired local window relays readings to the viewer using checked window messages, supporting Safari without HTTPS-to-HTTP fetches. The VPN runs on the connector’s computer.
 
 ## Validation
 
