@@ -4,6 +4,12 @@ An interactive 3D campus model with optional private live energy readings. The s
 
 The model contains 77 official SFU features, 127 surrounding footprints, contour-derived terrain and Burnaby 2025 aerial imagery. Heights and roofs are approximate exterior massing. The supplied official SFU logo is in `public/brand/`.
 
+## Use the hosted viewer
+
+Open **https://makonin.com/SFU-DigitalTwin/** in Safari. On this computer, keep the SFU VPN connected and start the connector with `pnpm connector` (or run the complete local twin below). Choose **Connect live data**, copy a code from the local connector page and pair the tab. Minimize the resulting local connection window and keep it open.
+
+The hosted Safari flow was verified with live SFU readings on September 6, 2026. Code and model assets are public; private settings and operational data remain local.
+
 ## Run the complete local twin
 
 Use Node 22.13+ and pnpm, and connect to the SFU VPN when off campus. The existing private connection settings are stored in `.private/foreseer.json`; never copy them into `public`, source control or a hosted environment.
