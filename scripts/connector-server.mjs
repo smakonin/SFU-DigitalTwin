@@ -2,18 +2,20 @@ import http from 'node:http';
 import {randomBytes, timingSafeEqual} from 'node:crypto';
 import {relayPage} from './relay-page.mjs';
 import {readBuilding} from '../lib/foreseer.ts';
+import {chargePointSetupPage} from './chargepoint-setup-page.mjs';
 
 const randomToken = () => randomBytes(24).toString('base64url');
 const sameSecret = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 export const DEFAULT_ORIGINS = ['https://makonin.com', 'https://smakonin.github.io', 'http://127.0.0.1:4173', 'http://localhost:4173', 'http://127.0.0.1:3000', 'http://localhost:3000'];
 
-export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read = readBuilding, now = Date.now, pairingLifetimeMs = 600_000, sessionLifetimeMs = 28_800_000, cacheLifetimeMs = 60_000}) {
+export function createConnector({config, charging, allowedOrigins = DEFAULT_ORIGINS, read = readBuilding, now = Date.now, pairingLifetimeMs = 600_000, sessionLifetimeMs = 28_800_000, cacheLifetimeMs = 60_000}) {
   const origins = new Set(allowedOrigins.map(value => {
     const url = new URL(value);
     if (url.origin !== value || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname)))) throw Error('Allowed viewer origins must be HTTPS or loopback origins.');
     return value;
   }));
   const sessions = new Map(), cache = new Map(), pending = new Map();
+  const setupSecret=randomToken();
   let pairing = {code: randomToken(), expires: now() + pairingLifetimeMs}, attempts = [], port;
   function rotatePairing() { pairing = {code: randomToken(), expires: now() + pairingLifetimeMs}; return pairing.code; }
   function send(res, status, value, extra = {}) {
@@ -27,6 +29,18 @@ export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read 
       const origin = req.headers.origin || (req.headers['sec-fetch-site'] === 'same-origin' ? ownOrigin : undefined);
       const url = new URL(req.url, ownOrigin);
       if (url.origin !== ownOrigin || url.username || url.password) return send(res, 400, {error:'Invalid request.'});
+      if(url.pathname==='/chargepoint/setup') {
+        if(!charging)return send(res,404,{error:'Setup unavailable.'});
+        if(url.search||(origin&&origin!==ownOrigin))return send(res,403,{error:'Local setup only.'});
+        if(req.method==='POST') {
+          if(origin!==ownOrigin||!sameSecret(req.headers['x-connector-setup'],setupSecret)||req.headers['content-type']?.split(';')[0]!=='application/json')return send(res,403,{error:'Local setup action required.'});
+          charging.save(await readJson(req,['licenseKey','password','version','region','stationGroupId'],4096));
+          return send(res,200,{saved:true});
+        }
+        if(req.method!=='GET'||(req.headers['sec-fetch-site']==='cross-site'&&req.headers['sec-fetch-mode']!=='navigate'))return send(res,403,{error:'Direct local navigation required.'});
+        const nonce=randomToken();
+        return send(res,200,chargePointSetupPage(nonce,setupSecret,charging.configured()),{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,'X-Frame-Options':'DENY'});
+      }
       if (url.pathname === '/relay') {
         const viewerOrigin=url.searchParams.get('viewer'), nonce=url.searchParams.get('nonce');
         if(req.method!=='GET'||!origins.has(viewerOrigin)||!nonce||!/^[a-f0-9-]{36}$/.test(nonce))return send(res,403,{error:'Unapproved relay request.'});
@@ -49,7 +63,7 @@ export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read 
       if (!origin || (!origins.has(origin) && origin !== ownOrigin)) return send(res, 403, {error:'Viewer origin not allowed.'});
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
-      const methods = url.pathname === '/v1/session' ? ['POST','DELETE'] : url.pathname === '/v1/energy' ? ['GET'] : [];
+      const methods = url.pathname === '/v1/session' ? ['POST','DELETE'] : ['/v1/energy','/v1/charging','/v1/charging/station'].includes(url.pathname) ? ['GET'] : [];
       if (!methods.length) return send(res, 404, {error:'Not found.'});
       if (req.method === 'OPTIONS') {
         const requestedHeaders = String(req.headers['access-control-request-headers'] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
@@ -76,6 +90,14 @@ export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read 
       const session = sessions.get(token);
       if (!session || session.origin !== origin) return send(res, 401, {error:'Pair this viewer with the local connector.'});
       if (req.method === 'DELETE') { sessions.delete(token); return send(res, 204, ''); }
+      if(url.pathname.startsWith('/v1/charging')) {
+        const id=url.searchParams.get('id');
+        if(url.pathname==='/v1/charging'?!!url.search:!id||!/^ev-[a-f0-9]{24}$/.test(id)||url.searchParams.size!==1)return send(res,400,{error:'Invalid charging request.'});
+        if(!charging)return send(res,200,{status:'not_configured',observedAt:new Date(now()).toISOString(),stations:[],message:'ChargePoint setup is not available in this connector.'});
+        const data=url.pathname==='/v1/charging'?await charging.getSnapshot():await charging.getStation(id);
+        if(!sessions.has(token)||session.expires<=now())return send(res,401,{error:'Session ended.'});
+        return send(res,200,data);
+      }
       const code = url.searchParams.get('code');
       if (!code || !/^\d{3}$/.test(code) || [...url.searchParams.keys()].some(k => k !== 'code') || url.searchParams.getAll('code').length !== 1) return send(res, 400, {error:'One three-digit building code is required.'});
       let result = cache.get(code);
@@ -104,11 +126,11 @@ export function createConnector({config, allowedOrigins = DEFAULT_ORIGINS, read 
     async close() {sessions.clear();cache.clear();server.closeAllConnections();await new Promise(resolve => server.close(resolve));},
   };
 }
-async function readJson(req) {
+async function readJson(req,keys=['code'],limit=1024) {
   let body = '';
-  for await (const chunk of req) {body += chunk; if (Buffer.byteLength(body) > 1024) throw Error('Request too large');}
+  for await (const chunk of req) {body += chunk; if (Buffer.byteLength(body) > limit) throw Error('Request too large');}
   const value = JSON.parse(body);
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => k !== 'code')) throw Error('Invalid request');
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !keys.includes(k))) throw Error('Invalid request');
   return value;
 }
 function pairingPage(code, nonce) {

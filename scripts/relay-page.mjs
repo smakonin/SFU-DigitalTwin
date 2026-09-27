@@ -19,6 +19,11 @@ window.addEventListener('message',async event=>{
    if(!session){const error=Error('Local session ended.');error.status=401;throw error;}
    if(typeof d.code!=='string'||!/^\u005cd{3}$/.test(d.code))throw Error('Invalid building code.');
    const result=await request('/v1/energy?code='+d.code,{headers:{Authorization:'Bearer '+session.token}});reply(d.id,result);
+  }else if(d.operation==='charging'||d.operation==='charging-station'){
+   if(!session){const error=Error('Local session ended.');error.status=401;throw error;}
+   if(d.operation==='charging-station'&&(typeof d.code!=='string'||!/^ev-[a-f0-9]{24}$/.test(d.code)))throw Error('Invalid station.');
+   const path=d.operation==='charging'?'/v1/charging':'/v1/charging/station?id='+d.code;
+   const result=await request(path,{headers:{Authorization:'Bearer '+session.token}});reply(d.id,result);
   }else if(d.operation==='disconnect'){await disconnect();reply(d.id,{disconnected:true});window.close();}
   else throw Error('Unknown request.');
  }catch(error){reply(d.id,null,{message:error.message,status:error.status||0});}

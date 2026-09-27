@@ -8,6 +8,7 @@ flowchart LR
   Browser <-->|Checked window messages|Window[Local connection window]
   Window <-->|Authenticated same-origin requests|Connector[127.0.0.1 connector]
   Connector <-->|Read-only requests through SFU VPN|Source[Private SFU energy source]
+  Connector <-->|Authenticated read-only HTTPS|ChargePoint[ChargePoint API]
 ```
 
 ## Start and pair
@@ -21,6 +22,8 @@ flowchart LR
 Each pairing code expires after 10 minutes and works once. **New code** on the local connector page generates a replacement. Sessions expire after eight hours, clear from the browser on reload and can be revoked with **Disconnect live data**. Restarting the connector ends all sessions. No token is saved in browser storage or sent in a URL.
 
 ## Private configuration
+
+ChargePoint uses separate private application storage outside the repository. See [ChargePoint setup](CHARGEPOINT.md) for the local credential form, station scope, port power and overstay colours. The same browser pairing covers both data sources.
 
 The working configuration is already in `.private/foreseer.json`. It contains the upstream `baseUrl` and a `meters` array of `{buildingCode, channelId, device}` entries. Keep this file and the supplied legacy energy files private. They are not copied into the static build or the hosted app.
 
@@ -62,6 +65,7 @@ If pairing fails:
 
 - `POST /v1/session` exchanges a one-use pairing code for an origin-bound token.
 - `GET /v1/energy?code=004` reads that building’s configured private meters with `Authorization: Bearer …`.
+- `GET /v1/charging` and `GET /v1/charging/station?id=ev-…` read filtered ChargePoint locations, status and power through the same authentication.
 - `DELETE /v1/session` revokes the current session.
 - The pairing management page is available only through direct loopback navigation. It denies embedding and does not enable CORS.
 - Host validation protects against requests addressed to other hostnames. Cross-origin data requests require an explicitly allowed Origin and matching token. Local-window requests require the loopback origin (or same-origin Fetch Metadata for GET) and its matching token. Preflights permit only the expected methods and headers.

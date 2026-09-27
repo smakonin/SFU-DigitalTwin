@@ -73,3 +73,31 @@ test('local relay page permits only approved viewers and same-origin authenticat
   assert.equal((await fetch(s.base+'/v1/energy?code=004',{headers})).status,200);
   assert.equal((await s.request('/v1/energy?code=004',{headers:{Authorization:'Bearer '+token}})).status,401);
 });
+test('ChargePoint setup is local-only, CSRF protected, and never reads back stored credentials',async t=>{
+  let saved=null;
+  const charging={configured:()=>!!saved,save:value=>{saved=value;},getSnapshot:async()=>({status:'not_configured',stations:[]})};
+  const s=await setup(t,{charging});
+  assert.equal((await s.request('/chargepoint/setup')).status,403);
+  const response=await fetch(s.base+'/chargepoint/setup'),page=await response.text();assert.equal(response.headers.get('access-control-allow-origin'),null);
+  const csrf=page.match(/'X-Connector-Setup':"([^"]+)"/)[1];
+  const payload={licenseKey:'synthetic-key',password:'synthetic-private-password',version:'5.1'};
+  const init={method:'POST',headers:{Origin:s.base,'Content-Type':'application/json','X-Connector-Setup':csrf},body:JSON.stringify(payload)};
+  assert.equal((await fetch(s.base+'/chargepoint/setup',{...init,headers:{...init.headers,Origin:origin}})).status,403);
+  assert.equal((await fetch(s.base+'/chargepoint/setup',{...init,headers:{...init.headers,'X-Connector-Setup':'wrong'}})).status,403);
+  const result=await fetch(s.base+'/chargepoint/setup',init);assert.equal(result.status,200);assert.deepEqual(saved,payload);
+  assert(!JSON.stringify(await result.json()).includes(payload.password));assert(!(await(await fetch(s.base+'/chargepoint/setup')).text()).includes(payload.password));
+});
+test('charging reads require pairing, reject arbitrary targets and suppress disconnected responses',async t=>{
+  let reads=0,complete,started;
+  const ready=new Promise(resolve=>{started=resolve;});
+  const charging={getSnapshot:async()=>{reads++;return {status:'connected',stations:[]};},getStation:async()=>{started();return new Promise(resolve=>{complete=()=>resolve({station:null});});}};
+  const s=await setup(t,{charging});
+  assert.equal((await s.request('/v1/charging')).status,401);assert.equal(reads,0);
+  const session=await s.pair(),headers={Authorization:'Bearer '+session.token};
+  assert.equal((await s.request('/v1/charging',{headers})).status,200);
+  assert.equal((await s.request('/v1/charging?url=https://attacker.example',{headers})).status,400);
+  assert.equal((await s.request('/v1/charging/station?id=1:999999',{headers})).status,400);
+  assert.equal((await s.request('/v1/charging',{method:'POST',headers})).status,405);
+  const request=s.request('/v1/charging/station?id=ev-'+'a'.repeat(24),{headers});await ready;
+  await s.request('/v1/session',{method:'DELETE',headers});complete();assert.equal((await request).status,401);
+});

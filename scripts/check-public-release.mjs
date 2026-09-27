@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {chargePointPrivateValues} from './private-release-values.mjs';
 const roots = process.argv.slice(2).length ? process.argv.slice(2) : ['public','dist-pages'];
-const forbiddenKeys = new Set(['meters','channelId','device','readings','observedAt','sampledAt','baseUrl','token','mappedBuildings','powerChannels']);
+const forbiddenKeys = new Set(['meters','channelId','device','readings','observedAt','sampledAt','baseUrl','token','mappedBuildings','powerChannels','licenseKey','password','credentialID','sessionID','userID','driverEmail','powerKw','inSession']);
 function checkKeys(value, file) {
   if (!value || typeof value !== 'object') return;
   for (const [key,item] of Object.entries(value)) {assert(!forbiddenKeys.has(key), `Operational field found in ${file}: ${key}`);checkKeys(item,file);}
@@ -13,6 +14,7 @@ if(fs.existsSync('.private/foreseer.json')) {
   const url=new URL(privateConfig.baseUrl);
   secrets=[url.hostname,...privateConfig.meters.map(m=>m.device)].filter(s=>s?.length>4);
 }
+secrets.push(...chargePointPrivateValues());
 let count=0;
 function inspect(file) {
   const bytes=fs.readFileSync(file), text=bytes.toString('utf8');

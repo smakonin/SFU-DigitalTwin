@@ -1,15 +1,17 @@
 import {execFileSync} from 'node:child_process';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import {chargePointPrivateValues} from './private-release-values.mjs';
 const git=(...args)=>execFileSync('git',args,{encoding:'utf8',maxBuffer:20*1024*1024});
 const ref=process.argv[2]||'HEAD';
-const forbidden=/(^|\/)(\.private|\.openai|sfu-grid|\.pnpm-store|node_modules|data\/raw)(\/|$)|(^|\/)(meter-registry\.json|\.env[^/]*|\.dev\.vars[^/]*|[^/]*\.(pem|key))$/;
+const forbidden=/(^|\/)(\.private|\.openai|sfu-grid|\.pnpm-store|node_modules|data\/raw)(\/|$)|(^|\/)(chargepoint\.json|meter-registry\.json|\.env[^/]*|\.dev\.vars[^/]*|[^/]*\.(pem|key))$/;
 let secrets=[], ids=[];
 if(fs.existsSync('.private/foreseer.json')) {
   const config=JSON.parse(fs.readFileSync('.private/foreseer.json','utf8'));
   secrets=[new URL(config.baseUrl).hostname,...config.meters.map(m=>m.device)].filter(s=>s?.length>4);
   ids=config.meters.map(m=>m.channelId);
 }
+secrets.push(...chargePointPrivateValues());
 const checked=new Set();
 const commits=git('rev-list',ref).trim().split('\n').filter(Boolean);
 for(const commit of commits) {
@@ -27,4 +29,13 @@ for(const commit of commits) {
     for(const id of ids)assert(!new RegExp('channelId["\\\']?\\s*:\\s*'+id+'\\b').test(text),`Private channel mapping in public history: ${file}`);
   }
 }
-console.log(`Checked ${commits.length} public commits and ${checked.size} unique source files; no forbidden paths or known private source values found.`);
+const workingFiles=git('ls-files','--cached','--others','--exclude-standard','-z').split('\0').filter(Boolean);
+for(const file of new Set(workingFiles)) {
+  assert(!forbidden.test(file),`Private path in working source: ${file}`);
+  if(!fs.existsSync(file))continue;
+  assert(!fs.lstatSync(file).isSymbolicLink(),`Linked content in working source: ${file}`);
+  const text=fs.readFileSync(file,'utf8');
+  for(const secret of secrets)assert(!text.includes(secret),`Known private value in working source: ${file}`);
+  assert(!/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}/.test(text),`Credential pattern in working source: ${file}`);
+}
+console.log(`Checked ${commits.length} public commits, ${checked.size} historical files and ${workingFiles.length} working files; no forbidden paths or known private source values found.`);

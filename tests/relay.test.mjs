@@ -30,3 +30,10 @@ test('relay keeps bearer token in the local window and sends results only to its
   await r.message('read',{code:'004&url=bad'});assert.equal(r.calls.length,2);
   await r.message('disconnect');assert.equal(r.calls[2].init.method,'DELETE');
 });
+test('EV relay uses only fixed read routes and refuses unsafe station identifiers',async()=>{
+  const r=setup();await r.message('charging');assert.equal(r.calls.length,0);
+  await r.message('pair',{code:'test'});await r.message('charging');assert.equal(r.calls[1].path,'/v1/charging');
+  await r.message('charging-station',{code:'ev-'+'a'.repeat(24)});assert.equal(r.calls[2].path,'/v1/charging/station?id=ev-'+'a'.repeat(24));
+  await r.message('charging-station',{code:'ev-x&url=https://attacker.example'});assert.equal(r.calls.length,3);
+  assert(!JSON.stringify(r.messages).includes('private-test-bearer'));
+});

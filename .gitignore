@@ -51,3 +51,6 @@ next-env.d.ts
 
 # Local dependency cache
 /.pnpm-store/
+
+# Defense in depth: real ChargePoint settings belong in local application storage.
+chargepoint.json

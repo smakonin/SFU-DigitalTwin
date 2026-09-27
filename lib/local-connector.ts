@@ -1,4 +1,5 @@
 import type {EnergyResponse} from './energy';
+import type {ChargingResponse,ChargingStationResponse} from './charging';
 export const CONNECTOR_URL = 'http://127.0.0.1:8787';
 export type ConnectorSession = {token:string; expiresAt:string};
 export class ConnectorError extends Error {constructor(message:string, public status = 0) {super(message);}}
@@ -54,4 +55,12 @@ export async function readEnergy(session:ConnectorSession,code:string,signal:Abo
 export async function disconnectConnector(session:ConnectorSession) {
   const relay=relays.get(session.token);if(!relay)return;
   try{await request(relay,'disconnect');}finally{relay.dispose();}
+}
+export async function readCharging(session:ConnectorSession,signal:AbortSignal):Promise<ChargingResponse> {
+  const relay=relays.get(session.token);if(!relay)throw new ConnectorError('Local session ended.',401);
+  return await request(relay,'charging',undefined,signal) as ChargingResponse;
+}
+export async function readChargingStation(session:ConnectorSession,id:string,signal:AbortSignal):Promise<ChargingStationResponse> {
+  const relay=relays.get(session.token);if(!relay)throw new ConnectorError('Local session ended.',401);
+  return await request(relay,'charging-station',id,signal) as ChargingStationResponse;
 }

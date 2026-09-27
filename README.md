@@ -2,6 +2,8 @@
 
 An interactive 3D campus model with optional private live energy readings. The static viewer is hosted on [GitHub Pages](https://makonin.com/SFU-DigitalTwin/). A separate read-only connector on the viewer’s computer uses its SFU campus or VPN connection.
 
+The EV charging layer supports ChargePoint locations, per-port power, session status and overstay colours through the local connector. Enter API credentials only in the [local setup form](http://127.0.0.1:8787/chargepoint/setup); they are stored outside the project in this Mac's private application settings. See [ChargePoint setup and colour rules](docs/CHARGEPOINT.md).
+
 The model contains 77 official SFU features, 127 surrounding footprints, contour-derived terrain and Burnaby 2025 aerial imagery. Heights and roofs are approximate exterior massing. The supplied official SFU logo is in `public/brand/`.
 
 ## Use the hosted viewer
@@ -24,6 +26,8 @@ If Node and pnpm are not on PATH on this computer, run `sh scripts/start-local.s
 Open the viewer at **http://127.0.0.1:4173/SFU-DigitalTwin/**. Select **Connect live data**, open the local connector page, copy its temporary code and choose **Pair this tab**. Pairing opens a small local connection window. Minimize that window and keep it open. Select a building to see its configured readings. Stop the terminal process with Ctrl+C to stop both services.
 
 The code is single-use and expires after 10 minutes. A paired session lasts up to eight hours, stays in that tab’s memory and clears on reload. **Disconnect live data** immediately removes displayed readings and revokes the session. The connector must remain running, and its computer must retain SFU network access.
+
+Choose **Layers** beside the 3D/Plan controls, or open **Layers & sources**, to show or hide **Facilities Metering** and **EV Charging** independently. Facilities Metering controls meter readings and demand charts; EV Charging controls station markers, the station list, port details and the colour legend. Hidden layers stop polling and discard their displayed readings. Showing a layer resumes reads through the existing pairing. Both layers start shown when the viewer opens. Campus geometry stays visible; aerial imagery and surrounding buildings have separate controls.
 
 ## Run components separately
 
