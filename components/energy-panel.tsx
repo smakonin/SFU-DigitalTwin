@@ -11,7 +11,7 @@ export default function EnergyPanel({building,session,onSessionEnded}:{building?
  const [clock,setClock]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),10000);return()=>clearInterval(timer)},[]);
  useEffect(()=>{
-  setData(null);setError('');setHistory({});if(!building?.buildingCode)return;
+  setData(null);setError('');setHistory({});if(!building?.buildingCode || building.kind==='plaza')return;
   const life=new AbortController();let timer:ReturnType<typeof setTimeout>;const poll=async()=>{
    setBusy(true);
    try{const d=await readEnergy(session,building.buildingCode!,life.signal);if(life.signal.aborted)return;setData(d);setError('');setHistory(prev=>{const next={...prev};for(const v of d.readings)if(v.value!==null&&v.quality==='normal'){const list=next[v.channelId]||[];if(list.at(-1)?.time!==v.observedAt)next[v.channelId]=[...list,{value:v.value,time:v.observedAt}].slice(-60);}return next;});}
@@ -20,8 +20,8 @@ export default function EnergyPanel({building,session,onSessionEnded}:{building?
   };void poll();return()=>{life.abort();clearTimeout(timer)};
  },[building?.buildingCode,retry,session]);
  const stale=data&&clock-Date.parse(data.observedAt)>120000;
- return <div className="energy-panel"><div className="section-heading"><Zap size={18}/><h3>Electrical demand</h3><button className="refresh-button" disabled={busy} onClick={()=>setRetry(x=>x+1)} aria-label="Refresh energy readings"><RefreshCw size={15} className={busy?'spin':''}/></button></div>
- {!building?<div className="energy-empty"><Radio size={24}/><strong>Select a building</strong><p>Open a building to read its configured private meters.</p></div>:<>
+ return <div className="energy-panel"><div className="section-heading"><Zap size={18}/><h3>Electrical demand</h3><button className="refresh-button" disabled={busy||!building?.buildingCode||building.kind==='plaza'} onClick={()=>setRetry(x=>x+1)} aria-label="Refresh energy readings"><RefreshCw size={15} className={busy?'spin':''}/></button></div>
+ {!building?<div className="energy-empty"><Radio size={24}/><strong>Select a building</strong><p>Open a building to read its configured private meters.</p></div>:!building.buildingCode||building.kind==='plaza'?<div className="energy-empty"><Radio size={24}/><strong>No verified meter mapping</strong><p>This location has no verified building meter mapping in this model.</p></div>:<>
  <div className={'connection-line '+(data?.status==='connected'&&!stale?'connected':'')}><span className="live-dot"/>{busy&&!data?'Connecting over SFU network…':stale?'Observation stale':data?.status==='connected'?'Source connected · 60 s polling':data?.status==='partial'?'Some meters unreachable':data?.status==='unmapped'?'No meter mapping':'Source not connected'}</div>
  {error&&<p className="connection-error" role="status">{error}</p>}
  {data?.status==='unavailable'&&<div className="energy-empty"><WifiOff size={22}/><strong>SFU network required</strong><p>{data.message}</p></div>}

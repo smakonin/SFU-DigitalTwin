@@ -13,6 +13,7 @@ import type {
   ChargingStation,
   ChargingStationResponse,
 } from '@/lib/charging';
+import type { CampusId } from '@/lib/campuses';
 import { chargingPortState, CHARGING_LABELS } from '@/lib/charging-state';
 export function portSessionLabel(port: ChargingPort) {
   if (port.inSession === true)
@@ -26,7 +27,9 @@ export default function ChargingPanel({
   inventory,
   session,
   onSessionEnded,
+  campusId,
 }: {
+  campusId: CampusId;
   station?: ChargingStation;
   inventory: ChargingResponse | null;
   session: ConnectorSession;
@@ -53,7 +56,12 @@ export default function ChargingPanel({
     const poll = async () => {
       setBusy(true);
       try {
-        const next = await readChargingStation(session, stationId, life.signal);
+        const next = await readChargingStation(
+          session,
+          stationId,
+          life.signal,
+          campusId,
+        );
         if (!life.signal.aborted) {
           setData(next);
           setError('');
@@ -86,7 +94,7 @@ export default function ChargingPanel({
       life.abort();
       clearTimeout(timer);
     };
-  }, [session, stationId, retry]);
+  }, [session, stationId, retry, campusId]);
   const useDetail =
     data &&
     (!inventory ||

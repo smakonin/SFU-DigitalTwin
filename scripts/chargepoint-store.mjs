@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { isCampusId } from '../lib/campuses.ts';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -20,8 +21,8 @@ export function createChargePointStore(
   file = CHARGEPOINT_CONFIG_PATH,
   clientFactory = createChargePointClient,
 ) {
-  let client = null,
-    loadedMtime = null;
+  const clients = new Map();
+  let loadedMtime = null;
   const configured = () => fs.existsSync(file);
   function safeFile() {
     const stat = fs.lstatSync(file);
@@ -29,17 +30,25 @@ export function createChargePointStore(
       throw Error('Private configuration must be a regular file.');
     return stat;
   }
-  function load() {
+  function load(campusId) {
+    if (!isCampusId(campusId)) throw Error('Invalid campus.');
     if (!configured()) return null;
     const stat = safeFile();
-    if (!client || loadedMtime !== stat.mtimeMs) {
-      fs.chmodSync(file, 0o600);
-      client = clientFactory(
-        validateChargePointConfig(JSON.parse(fs.readFileSync(file, 'utf8'))),
-      );
+    if (loadedMtime !== stat.mtimeMs) {
+      clients.clear();
       loadedMtime = stat.mtimeMs;
     }
-    return client;
+    if (!clients.has(campusId)) {
+      fs.chmodSync(file, 0o600);
+      clients.set(
+        campusId,
+        clientFactory(
+          validateChargePointConfig(JSON.parse(fs.readFileSync(file, 'utf8'))),
+          { campusId },
+        ),
+      );
+    }
+    return clients.get(campusId);
   }
   function save(value) {
     const config = validateChargePointConfig(value),
@@ -62,15 +71,15 @@ export function createChargePointStore(
     } finally {
       if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
     }
-    client = null;
+    clients.clear();
     loadedMtime = null;
   }
   return {
     configured,
     save,
-    async getSnapshot() {
+    async getSnapshot(campusId = 'burnaby') {
       try {
-        const source = load();
+        const source = load(campusId);
         return source
           ? await source.getSnapshot()
           : {
@@ -92,9 +101,9 @@ export function createChargePointStore(
         };
       }
     },
-    async getStation(id) {
+    async getStation(id, campusId = 'burnaby') {
       try {
-        const source = load();
+        const source = load(campusId);
         if (!source) throw Error();
         return await source.getStation(id);
       } catch {

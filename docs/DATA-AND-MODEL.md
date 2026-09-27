@@ -1,4 +1,4 @@
-# SFU Burnaby campus twin — source and modeling record
+# SFU campus twin — source and modeling record
 
 Prepared September 5, 2026. This is an operational prototype with approximate exterior massing, not a completed survey-grade digital twin.
 
@@ -20,7 +20,7 @@ The public application labels laser scanning, LiDAR hillshade, survey data and u
 - Burnaby 2025 orthophoto: https://gis.burnaby.ca/arcgis/rest/services/Burnaby_Ortho_2025/MapServer
 - Burnaby licence: https://data.burnaby.ca/pages/open-government-licence
 
-Contains information licensed under the Open Government Licence – City of Burnaby. SFU data are credited to SFU Facilities Services; public access alone does not establish an open redistribution licence. This workspace and private viewer are the current delivery scope.
+Contains information licensed under the Open Government Licence – City of Burnaby. SFU data are credited to SFU Facilities Services; public access alone does not establish an open redistribution licence. Public code and model assets are delivered through GitHub Pages; operational configuration and readings remain local.
 
 Raw spatial queries, SHA-256 hashes and retrieval times are in data/raw/sources.json and public/data/sources.json. Raw geographic downloads remain local and can be reproduced with scripts/acquire-data.py.
 
@@ -56,3 +56,27 @@ The model checks cover finite coordinates, terrain dimensions, official feature 
 3. Validate every meter-to-building alias with Facilities; map parent/child electrical feeds, units, CT/PT multipliers, generator feeds and net import/export. Confirm authoritative sample timestamps and historian access.
 4. Operate a read-only gateway inside SFU's approved network, with authenticated access, retention, monitoring and an approved outbound transport to the hosted twin. Do not expose Foreseer directly to the public internet.
 5. Add a time-series store, trend queries, freshness SLAs and quality-aware alarms only after the electrical semantics are confirmed. A trustworthy building or campus total is then possible.
+
+
+## Vancouver and Surrey — September 27, 2026
+
+The public [SFU exterior footprint layer 66](https://viewsfu-prd.its.sfu.ca/fsgis/rest/services/Vertisee/Vertisee_BuildingFloorplan_P_2020/MapServer/66) contains eight Vancouver and five Surrey features, with official three-digit building codes. The site registry in `data/campus-sites.json` combines these with SFU’s [Vancouver locations](https://www.sfu.ca/vancouver/about/our-locations.html) and [Surrey locations](https://www.sfu.ca/surrey/about/our-locations.html). The ninth Vancouver location, the SFU collection at Bill Reid Gallery, uses a municipal 2015 footprint matched to the BC Geocoder’s public address point. It has no invented SFU building code or meter mapping. This is host-building massing; gallery rooms, SFU floors and ownership boundaries are not identified.
+
+Surrey includes Central City, University Drive, WearTech Labs in City Centre 2, SFU imaging space at Surrey Memorial Hospital, and the outdoor plaza. The plaza is a surface following the terrain mesh with a 0.2 m display offset. Central City separates a 32.82 m podium from a 111.27 m office tower. The tower footprint comes from [OpenStreetMap way 450312789](https://www.openstreetmap.org/way/450312789), credited to OpenStreetMap contributors under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Its reusable source geometry is included as `public/data/surrey/central-city-tower.geojson`. Both heights come from the municipal dataset and remain approximate. Shared buildings are labelled individually in the inspector. New sites without a verified footprint are not included.
+
+Sources and methods:
+
+- [Vancouver 2009 building footprints](https://opendata.vancouver.ca/explore/dataset/building-footprints-2009/): segmented LiDAR massing, `hgt_agl` heights and `baseelev_m` building-base elevations. This historical dataset can predate redevelopment; it is not current roof geometry. [2015 footprints](https://opendata.vancouver.ca/explore/dataset/building-footprints-2015/) supply the gallery’s host footprint. [City licence](https://opendata.vancouver.ca/pages/licence/).
+- [Surrey building footprints](https://services5.arcgis.com/YRpe0VKTJytZSSIB/arcgis/rest/services/Building%20Footprnts/FeatureServer/0): `BUILDING_HEIGHT` (metres) and `GROUND_ELEVATION`. [City licence](https://data.surrey.ca/pages/open-government-licence-surrey).
+- Baseline footprint matching chooses the largest intersection exceeding 25% of the SFU footprint. Central City uses distinct podium and tower parts; the broad north podium context no longer inherits the tower height. Vancouver assigns complete historical roof sections to a campus building when at least half of the city section matches its footprint; the original registry area remains unchanged. Matched roof overhangs are removed from city context so they highlight with the rest of the building; small intersections with neighbouring towers are rejected. Harbour Centre’s base is cut around its separate tower and matched tower roof extent to prevent duplicate selection surfaces. Unmatched heights use explicit placeholders. Every campus feature records its height method, overlap and source geometry; multi-part features include section heights and source object IDs, and their displayed height is the maximum; no field is a survey certification.
+- Surrounding city geometry is clipped against the study extent and campus footprints to avoid obscuring campus exteriors. Vancouver context contains historical roof components, not one record per building.
+- Ground is a 15 m grid interpolated from municipal building-base points with nearest-neighbour edge fill. It is not a surveyed DTM; its vertical datum is unverified. No aerial imagery is provided for these campuses.
+- Both use EPSG:26910. Vancouver extent: `[491100, 5458550, 493500, 5459400]`, origin `[492300, 5458975, 17]`. Surrey extent: `[510600, 5446750, 511750, 5448800]`, origin `[511175, 5447775, 78]`. Coordinates are metres; scene X is east, Y is up, Z is south.
+- Each `public/data/<campus>/sources.json` records retrieval URLs, dates and source hashes. The companion GLB contains public geometry and provenance only.
+
+Facilities Metering continues to request official building codes from the existing private configuration. No private mappings are inferred, created or published by this model extension. EV discovery, station detail caches and browser observations are isolated by campus. Account permissions determine available stations and power readings.
+
+
+### Rendering corrections
+
+Building sections share one selectable asset ID, so selecting Central City highlights its podium and tower together. Harbour Centre and its separately listed tower retain separate selections without overlapping base geometry. Selected materials keep depth testing and receive a small depth bias to stabilize coincident roof seams. Plaza vertices follow the exact terrain triangles rather than a single centroid elevation. Regression checks verify tower proportions and height, exported tower geometry, selection/reset across all sections, Harbour Centre separation, and plaza clearance above the ground. These checks address rendering consistency, not surveyed accuracy.

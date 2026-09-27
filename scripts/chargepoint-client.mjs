@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
 import { SyntaxValidator } from 'fast-xml-validator';
+import { CAMPUSES, isCampusId } from '../lib/campuses.ts';
 import { withinCampus } from '../lib/charging-location.ts';
 
 const ENDPOINTS = Object.freeze({
@@ -188,7 +189,7 @@ function emptyPort(number) {
     sessionEvidence: 'unknown',
   };
 }
-export function normalizeStation(raw) {
+export function normalizeStation(raw, campusId = 'burnaby') {
   if (!/^\d+:\d+$/.test(str(raw.stationID))) return null;
   const ports = list(raw.Port).filter((p) =>
     /^\d{1,4}$/.test(str(p.portNumber)),
@@ -200,7 +201,7 @@ export function normalizeStation(raw) {
         g &&
         str(g.Lat) &&
         str(g.Long) &&
-        withinCampus(Number(g.Long), Number(g.Lat)),
+        withinCampus(Number(g.Long), Number(g.Lat), campusId),
     );
   if (!location) return null;
   return {
@@ -269,8 +270,9 @@ export function mergeStation(station, statusData, loadData, observedAt) {
 }
 export function createChargePointClient(
   config,
-  { fetchImpl = fetch, now = Date.now } = {},
+  { fetchImpl = fetch, now = Date.now, campusId = 'burnaby' } = {},
 ) {
+  if (!isCampusId(campusId)) throw Error('Invalid campus.');
   config = validateChargePointConfig(config);
   const call = (method, query, signal) =>
     chargePointCall(config, method, query, fetchImpl, signal);
@@ -299,12 +301,12 @@ export function createChargePointClient(
     for (let page = 0; page < 10; page++) {
       const data = await call(
         'getStations',
-        `<City>Burnaby</City>${config.stationGroupId ? `<sgID>${config.stationGroupId}</sgID>` : ''}<startRecord>${start}</startRecord><numStations>100</numStations>`,
+        `<City>${CAMPUSES[campusId].city}</City>${config.stationGroupId ? `<sgID>${config.stationGroupId}</sgID>` : ''}<startRecord>${start}</startRecord><numStations>100</numStations>`,
         signal,
       );
       const rows = list(data.stationData);
       for (const row of rows) {
-        const item = normalizeStation(row);
+        const item = normalizeStation(row, campusId);
         if (item) found.set(item.station.id, item);
       }
       if (data.moreFlag !== '1') {

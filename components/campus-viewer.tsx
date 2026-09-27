@@ -1,39 +1,354 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
-import {assetPath} from '@/lib/runtime-mode';
-import {createCampusModel} from '@/lib/model';
-import type {Campus,Terrain} from '@/lib/campus-types';
-import type {ChargingStation} from '@/lib/charging';
-import {chargingPosition} from '@/lib/charging-location';
-import {chargingStationState,CHARGING_COLOURS} from '@/lib/charging-state';
-export default function CampusViewer({campus,selected,onSelect,aerial,context,view,reset,chargingStations,showCharging,chargingStale,chargingClock}:{chargingClock:number;chargingStale:boolean;chargingStations:ChargingStation[];showCharging:boolean;campus:Campus;selected:string;onSelect:(id:string)=>void;aerial:boolean;context:boolean;view:string;reset:number}){
- const host=useRef<HTMLDivElement>(null);const api=useRef<any>(null);const select=useRef(onSelect);select.current=onSelect;const [error,setError]=useState('');
- const charging=useRef({stations:chargingStations,show:showCharging,stale:chargingStale});charging.current={stations:chargingStations,show:showCharging,stale:chargingStale};
- useEffect(()=>{
-  let dead=false,frame=0;const el=host.current!;let dispose=()=>{};
-  fetch(assetPath('data/terrain.json')).then(r=>{if(!r.ok)throw Error('Terrain could not load.');return r.json() as Promise<Terrain>}).then((terrain:Terrain)=>{
-   if(dead)return;const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor('#0d1c24');renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;el.appendChild(renderer.domElement);renderer.domElement.setAttribute('aria-label','Interactive SFU campus model. Select buildings in the list for keyboard access.');
-   const scene=new THREE.Scene();scene.fog=new THREE.Fog('#0d1c24',3500,7500);const camera=new THREE.PerspectiveCamera(42,1,1,12000);camera.position.set(1300,1400,1600);
-   const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=35;controls.maxDistance=4500;controls.maxPolarAngle=Math.PI/2.07;controls.target.set(150,40,0);
-   scene.add(new THREE.HemisphereLight('#e8f6ff','#3b5752',2.4));const sun=new THREE.DirectionalLight('#fff0d8',3);sun.position.set(-700,1400,500);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-1500,right:1500,top:1100,bottom:-1100,far:4000});sun.shadow.bias=-.0003;scene.add(sun);
-   const model=createCampusModel(campus,terrain);scene.add(model.root);const markers=new THREE.Group();scene.add(markers);
-   const clearMarkers=()=>{for(const child of [...markers.children]){child.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Sprite){o.geometry?.dispose();const m=o.material as THREE.MeshBasicMaterial;m.map?.dispose();m.dispose();}});markers.remove(child);}};
-   const updateMarkers=()=>{clearMarkers();if(!charging.current.show)return;for(const station of charging.current.stations){const point=chargingPosition(station.longitude,station.latitude,terrain);const group=new THREE.Group();group.position.set(...point);group.userData.id=station.id;const color=CHARGING_COLOURS[chargingStationState(station,charging.current.stale)];const stem=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,30,6),new THREE.MeshBasicMaterial({color}));stem.position.y=15;stem.userData.id=station.id;group.add(stem);const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d')!;ctx.fillStyle=color;ctx.beginPath();ctx.arc(64,64,58,0,Math.PI*2);ctx.fill();ctx.fillStyle='#10242d';ctx.font='bold 48px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('EV',64,66);const texture=new THREE.CanvasTexture(canvas);const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false}));sprite.scale.set(36,36,1);sprite.position.y=40;sprite.userData.id=station.id;sprite.renderOrder=2;group.add(sprite);markers.add(group);}};updateMarkers();
-   const grid=new THREE.GridHelper(5000,50,'#29414b','#192e38');grid.position.y=-170;scene.add(grid);let texture:THREE.Texture|null=null;
-   const ray=new THREE.Raycaster();const mouse=new THREE.Vector2();let down=[0,0];
-   const pointerDown=(e:PointerEvent)=>{down=[e.clientX,e.clientY];};const pointerUp=(e:PointerEvent)=>{if(Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const rect=el.getBoundingClientRect();mouse.set((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);ray.setFromCamera(mouse,camera);const marker=ray.intersectObjects(markers.children,true)[0];if(marker){select.current(marker.object.userData.id);return;}const hit=ray.intersectObjects(model.buildings.children,true).find(h=>h.object instanceof THREE.Mesh&&h.object.parent?.visible);if(hit)select.current(hit.object.userData.id);};renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointerup',pointerUp);
-   const resize=()=>{camera.aspect=el.clientWidth/el.clientHeight;camera.updateProjectionMatrix();renderer.setSize(el.clientWidth,el.clientHeight);};const observer=new ResizeObserver(resize);observer.observe(el);resize();
-   api.current={...model,camera,controls,texture,terrain,updateMarkers,aerial:false,context:true,selected:'',style(){const a=api.current;if(!a)return;const mat=model.land.material as THREE.MeshStandardMaterial;mat.map=a.aerial?a.texture:null;mat.color.set(a.aerial?'#ffffff':'#466d68');mat.needsUpdate=true;for(const group of model.buildings.children){const b=campus.buildings.find(b=>b.id===group.userData.id)!;group.visible=b.source==='sfu'||a.context;for(const child of group.children)if(child instanceof THREE.Mesh){child.material.color.set(b.id===a.selected?'#ea534e':b.source==='sfu'?'#c8ddd9':'#778c8b');child.material.emissive.set(b.id===a.selected?'#36120e':'#000000');}}}};
-   new THREE.TextureLoader().load(assetPath('data/aerial-2025.jpg'),t=>{if(dead){t.dispose();return;}t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=renderer.capabilities.getMaxAnisotropy();texture=t;api.current.texture=t;api.current.style();},undefined,()=>setError('Aerial imagery unavailable; the terrain model remains usable.'));
-   const render=()=>{controls.update();renderer.render(scene,camera);frame=requestAnimationFrame(render);};render();dispose=()=>{observer.disconnect();controls.dispose();clearMarkers();texture?.dispose();scene.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.LineSegments){o.geometry?.dispose();(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose());}});renderer.dispose();renderer.domElement.remove();api.current=null;};
-  }).catch(e=>{if(!dead)setError(e.message||'WebGL is unavailable. Enable hardware acceleration in your browser.');});
-  return()=>{dead=true;cancelAnimationFrame(frame);dispose();};
- },[campus]);
- useEffect(()=>{let frame:number;const apply=()=>{const a=api.current;if(!a){frame=requestAnimationFrame(apply);return;}a.aerial=aerial;a.context=context;a.selected=selected;a.style();};apply();return()=>cancelAnimationFrame(frame);},[selected,aerial,context,campus]);
- useEffect(()=>{api.current?.updateMarkers();},[chargingStations,showCharging,chargingStale,chargingClock]);
- useEffect(()=>{const a=api.current;if(!a)return;const station=charging.current.stations.find(s=>s.id===selected);if(station){const center=new THREE.Vector3(...chargingPosition(station.longitude,station.latitude,a.terrain));a.controls.target.copy(center);a.camera.position.copy(center).add(new THREE.Vector3(120,160,160));return;}const b=campus.buildings.find(b=>b.id===selected);if(!b)return;const center=new THREE.Vector3(...b.center);a.controls.target.copy(center);a.camera.position.copy(center).add(new THREE.Vector3(200,230,280));},[selected,campus]);
- useEffect(()=>{const a=api.current;if(!a)return;a.controls.target.set(150,40,0);if(view==='plan')a.camera.position.set(150,2200,.1);else a.camera.position.set(1300,1400,1600);},[view,reset]);
- return <div className="model-host" ref={host}>{error&&<div className="model-error" role="status">{error}</div>}</div>;
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { assetPath } from '@/lib/runtime-mode';
+import { createCampusModel, styleBuildingSelection } from '@/lib/model';
+import { CAMPUSES, type CampusId } from '@/lib/campuses';
+import type { Campus, Terrain } from '@/lib/campus-types';
+import type { ChargingStation } from '@/lib/charging';
+import { chargingPosition } from '@/lib/charging-location';
+import { chargingStationState, CHARGING_COLOURS } from '@/lib/charging-state';
+type Props = {
+  campusId: CampusId;
+  chargingClock: number;
+  chargingStale: boolean;
+  chargingStations: ChargingStation[];
+  showCharging: boolean;
+  campus: Campus;
+  selected: string;
+  selectionRevision: number;
+  onSelect: (id: string) => void;
+  aerial: boolean;
+  context: boolean;
+  view: string;
+  reset: number;
+};
+type ViewerApi = {
+  style: () => void;
+  markers: () => void;
+  focus: () => void;
+  overview: () => void;
+};
+export default function CampusViewer(props: Props) {
+  const {
+    campus,
+    campusId,
+    selected,
+    selectionRevision,
+    aerial,
+    context,
+    view,
+    reset,
+    chargingStations,
+    showCharging,
+    chargingStale,
+    chargingClock,
+  } = props;
+  const host = useRef<HTMLDivElement>(null),
+    api = useRef<ViewerApi | null>(null),
+    latest = useRef(props);
+  useEffect(() => {
+    latest.current = props;
+  }, [props]);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const life = new AbortController();
+    let frame = 0;
+    const el = host.current!;
+    let dispose = () => {};
+    const definition = CAMPUSES[campusId];
+    fetch(assetPath(`${definition.directory}/terrain.json`), {
+      signal: life.signal,
+    })
+      .then((r) => {
+        if (!r.ok) throw Error('Terrain could not load.');
+        return r.json() as Promise<Terrain>;
+      })
+      .then((terrain) => {
+        if (life.signal.aborted) return;
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.setClearColor('#0d1c24');
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        el.appendChild(renderer.domElement);
+        renderer.domElement.setAttribute(
+          'aria-label',
+          `Interactive SFU ${definition.name} campus model. Select buildings in the list for keyboard access.`,
+        );
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog('#0d1c24', 5000, 10000);
+        const camera = new THREE.PerspectiveCamera(42, 1, 1, 20000);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.minDistance = 35;
+        controls.maxDistance = 6500;
+        controls.maxPolarAngle = Math.PI / 2.07;
+        scene.add(new THREE.HemisphereLight('#e8f6ff', '#3b5752', 2.4));
+        const sun = new THREE.DirectionalLight('#fff0d8', 3);
+        sun.position.set(-700, 1800, 500);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        Object.assign(sun.shadow.camera, {
+          left: -1600,
+          right: 1600,
+          top: 1600,
+          bottom: -1600,
+          far: 5000,
+        });
+        sun.shadow.bias = -0.0003;
+        scene.add(sun);
+        const model = createCampusModel(campus, terrain);
+        scene.add(model.root);
+        const markers = new THREE.Group();
+        scene.add(markers);
+        const buildingById = new Map(campus.buildings.map((b) => [b.id, b]));
+        let texture: THREE.Texture | null = null;
+        const disposeObject = (object: THREE.Object3D) =>
+          object.traverse((o) => {
+            if (
+              o instanceof THREE.Mesh ||
+              o instanceof THREE.Sprite ||
+              o instanceof THREE.LineSegments
+            ) {
+              o.geometry?.dispose();
+              for (const m of Array.isArray(o.material)
+                ? o.material
+                : [o.material]) {
+                if ('map' in m) (m.map as THREE.Texture | null)?.dispose();
+                m.dispose();
+              }
+            }
+          });
+        const clearMarkers = () => {
+          for (const child of markers.children.slice()) {
+            disposeObject(child);
+            markers.remove(child);
+          }
+        };
+        const updateMarkers = () => {
+          clearMarkers();
+          if (!latest.current.showCharging) return;
+          for (const station of latest.current.chargingStations) {
+            const group = new THREE.Group();
+            group.position.set(
+              ...chargingPosition(station.longitude, station.latitude, terrain),
+            );
+            group.userData.id = station.id;
+            const color =
+              CHARGING_COLOURS[
+                chargingStationState(station, latest.current.chargingStale)
+              ];
+            const stem = new THREE.Mesh(
+              new THREE.CylinderGeometry(1.5, 1.5, 30, 6),
+              new THREE.MeshBasicMaterial({ color }),
+            );
+            stem.position.y = 15;
+            stem.userData.id = station.id;
+            group.add(stem);
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d')!;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(64, 64, 58, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#10242d';
+            ctx.font = 'bold 48px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('EV', 64, 66);
+            const sprite = new THREE.Sprite(
+              new THREE.SpriteMaterial({
+                map: new THREE.CanvasTexture(canvas),
+                depthTest: false,
+              }),
+            );
+            sprite.scale.set(36, 36, 1);
+            sprite.position.y = 40;
+            sprite.userData.id = station.id;
+            sprite.renderOrder = 2;
+            group.add(sprite);
+            markers.add(group);
+          }
+        };
+        const style = () => {
+          const p = latest.current,
+            mat = model.land.material as THREE.MeshStandardMaterial;
+          mat.map = p.aerial ? texture : null;
+          mat.color.set(p.aerial && texture ? '#ffffff' : '#466d68');
+          mat.needsUpdate = true;
+          styleBuildingSelection(model.buildings, p.selected, p.context);
+        };
+        const overview = () => {
+          const [west, south, east, north] = terrain.bounds;
+          const target = new THREE.Vector3(
+            (west + east) / 2 - terrain.origin[0],
+            20,
+            terrain.origin[1] - (south + north) / 2,
+          );
+          const distance =
+            Math.max(
+              (east - west) / Math.max(camera.aspect, 0.45),
+              north - south,
+            ) * 1.55;
+          controls.target.copy(target);
+          camera.position
+            .copy(target)
+            .add(
+              latest.current.view === 'plan'
+                ? new THREE.Vector3(0, distance, 0.1)
+                : new THREE.Vector3(0.5, 0.75, 0.8)
+                    .normalize()
+                    .multiplyScalar(distance),
+            );
+          controls.update();
+        };
+        const focus = () => {
+          const p = latest.current,
+            station = p.showCharging
+              ? p.chargingStations.find((s) => s.id === p.selected)
+              : undefined;
+          const building = buildingById.get(p.selected);
+          if (!station && !building) return;
+          const center = new THREE.Vector3(
+            ...(station
+              ? chargingPosition(station.longitude, station.latitude, terrain)
+              : building!.center),
+          );
+          const distance = station
+            ? 230
+            : Math.max(
+                130,
+                building!.heightM * 2,
+                Math.sqrt(building!.areaM2) * 2.3,
+              ) / Math.min(1, camera.aspect);
+          if (building) center.y += building.heightM * 0.3;
+          controls.target.copy(center);
+          camera.position
+            .copy(center)
+            .add(
+              p.view === 'plan'
+                ? new THREE.Vector3(0, distance * 1.7, 0.1)
+                : new THREE.Vector3(0.7, 0.85, 1).multiplyScalar(distance),
+            );
+          controls.update();
+        };
+        const grid = new THREE.GridHelper(6000, 60, '#29414b', '#192e38');
+        grid.position.y = Math.min(...terrain.heights) - terrain.origin[2] - 12;
+        scene.add(grid);
+        const ray = new THREE.Raycaster(),
+          mouse = new THREE.Vector2();
+        let down = [0, 0];
+        const pointerDown = (e: PointerEvent) => {
+          down = [e.clientX, e.clientY];
+        };
+        const pointerUp = (e: PointerEvent) => {
+          if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+          const rect = el.getBoundingClientRect();
+          mouse.set(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+          );
+          ray.setFromCamera(mouse, camera);
+          const marker = ray.intersectObjects(markers.children, true)[0];
+          if (marker) {
+            latest.current.onSelect(marker.object.userData.id);
+            return;
+          }
+          const hit = ray
+            .intersectObjects(model.buildings.children, true)
+            .find(
+              (h) => h.object instanceof THREE.Mesh && h.object.parent?.visible,
+            );
+          if (hit) latest.current.onSelect(hit.object.userData.id);
+        };
+        renderer.domElement.addEventListener('pointerdown', pointerDown);
+        renderer.domElement.addEventListener('pointerup', pointerUp);
+        const resize = () => {
+          camera.aspect = el.clientWidth / Math.max(el.clientHeight, 1);
+          camera.updateProjectionMatrix();
+          renderer.setSize(el.clientWidth, el.clientHeight);
+        };
+        const observer = new ResizeObserver(resize);
+        observer.observe(el);
+        resize();
+        api.current = { style, markers: updateMarkers, focus, overview };
+        style();
+        updateMarkers();
+        overview();
+        if (definition.aerial)
+          new THREE.TextureLoader().load(
+            assetPath(definition.aerial),
+            (t) => {
+              if (life.signal.aborted) {
+                t.dispose();
+                return;
+              }
+              t.colorSpace = THREE.SRGBColorSpace;
+              t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+              texture = t;
+              style();
+            },
+            undefined,
+            () => {
+              if (!life.signal.aborted)
+                setError(
+                  'Aerial imagery unavailable; the terrain model remains usable.',
+                );
+            },
+          );
+        const render = () => {
+          controls.update();
+          renderer.render(scene, camera);
+          frame = requestAnimationFrame(render);
+        };
+        render();
+        dispose = () => {
+          observer.disconnect();
+          controls.dispose();
+          renderer.domElement.removeEventListener('pointerdown', pointerDown);
+          renderer.domElement.removeEventListener('pointerup', pointerUp);
+          clearMarkers();
+          disposeObject(scene);
+          texture?.dispose();
+          renderer.dispose();
+          renderer.forceContextLoss();
+          renderer.domElement.remove();
+          api.current = null;
+        };
+      })
+      .catch((e) => {
+        if (!life.signal.aborted)
+          setError(
+            e.message ||
+              'WebGL is unavailable. Enable hardware acceleration in your browser.',
+          );
+      });
+    return () => {
+      life.abort();
+      cancelAnimationFrame(frame);
+      dispose();
+    };
+  }, [campus, campusId]);
+  useEffect(() => {
+    api.current?.style();
+  }, [selected, aerial, context]);
+  useEffect(() => {
+    api.current?.markers();
+  }, [chargingStations, showCharging, chargingStale, chargingClock]);
+  useEffect(() => {
+    api.current?.focus();
+  }, [selected, selectionRevision]);
+  useEffect(() => {
+    api.current?.overview();
+  }, [view, reset]);
+  return (
+    <div className="model-host" ref={host}>
+      {error && <output className="model-error">{error}</output>}
+    </div>
+  );
 }

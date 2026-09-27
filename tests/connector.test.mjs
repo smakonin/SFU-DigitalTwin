@@ -101,3 +101,16 @@ test('charging reads require pairing, reject arbitrary targets and suppress disc
   const request=s.request('/v1/charging/station?id=ev-'+'a'.repeat(24),{headers});await ready;
   await s.request('/v1/session',{method:'DELETE',headers});complete();assert.equal((await request).status,401);
 });
+
+test('charging routes permit only fixed campus scopes, retaining legacy Burnaby requests',async t=>{
+  const calls=[],id='ev-'+'a'.repeat(24);
+  const charging={getSnapshot:async campus=>{calls.push(campus);return {stations:[]};},getStation:async(station,campus)=>{calls.push([station,campus]);return {station:null};}};
+  const s=await setup(t,{charging}),session=await s.pair(),headers={Authorization:'Bearer '+session.token};
+  for(const query of ['', '?campus=vancouver','?campus=surrey'])assert.equal((await s.request('/v1/charging'+query,{headers})).status,200);
+  assert.deepEqual(calls,['burnaby','vancouver','surrey']);
+  assert.equal((await s.request('/v1/charging/station?id='+id+'&campus=surrey',{headers})).status,200);
+  assert.deepEqual(calls[3],[id,'surrey']);
+  for(const query of ['campus=','campus=other','campus=__proto__','campus=surrey&campus=burnaby','campus=surrey&url=bad','id='+id])assert.equal((await s.request('/v1/charging?'+query,{headers})).status,400);
+  for(const query of ['campus=surrey','id='+id+'&campus=other','id='+id+'&id='+id])assert.equal((await s.request('/v1/charging/station?'+query,{headers})).status,400);
+  assert.equal(calls.length,4);
+});

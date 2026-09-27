@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'SFU Burnaby · Campus Twin',
+  title: 'SFU · Campus Twin',
   icons: { icon: { url: '/brand/SFU_block_colour_rgb_1000px.png', type: 'image/png' } },
-  description: 'Explore SFU Burnaby campus geometry, terrain and building energy connections with explicit data provenance.',
+  description: 'Explore SFU Burnaby, Vancouver and Surrey campus geometry, terrain and building energy connections with explicit data provenance.',
 };
 
 export default function RootLayout({

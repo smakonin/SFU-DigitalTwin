@@ -23,14 +23,26 @@ import EnergyPanel from '@/components/energy-panel';
 import CampusViewer from '@/components/campus-viewer';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  CAMPUSES,
+  CAMPUS_IDS,
+  isCampusId,
+  type CampusId,
+} from '@/lib/campuses';
 import type { Campus } from '@/lib/campus-types';
 import { useCharging } from '@/hooks/use-charging';
 import ChargingPanel from '@/components/charging-panel';
 import { chargingStationState, CHARGING_LABELS } from '@/lib/charging-state';
 export default function Home() {
-  const [campus, setCampus] = useState<Campus | null>(null),
-    [error, setError] = useState(''),
+  const [campusId, setCampusId] = useState<CampusId>('burnaby');
+  const definition = CAMPUSES[campusId];
+  const [loaded, setLoaded] = useState<{ id: CampusId; data: Campus } | null>(
+    null,
+  );
+  const campus = loaded?.id === campusId ? loaded.data : null;
+  const [error, setError] = useState(''),
     [selected, setSelected] = useState('sfu-55'),
+    [selectionRevision, setSelectionRevision] = useState(0),
     [query, setQuery] = useState(''),
     [aerial, setAerial] = useState(true),
     [context, setContext] = useState(true),
@@ -48,14 +60,23 @@ export default function Home() {
     });
   };
   useEffect(() => {
-    fetch(assetPath('data/campus.json'))
+    const life = new AbortController();
+    document.title = `SFU ${definition.name} · Campus Twin`;
+    fetch(assetPath(`${definition.directory}/campus.json`), {
+      signal: life.signal,
+    })
       .then((r) => {
         if (!r.ok) throw Error('Campus data unavailable');
         return r.json() as Promise<Campus>;
       })
-      .then(setCampus)
-      .catch((e) => setError(e.message));
-  }, []);
+      .then((data) => {
+        if (!life.signal.aborted) setLoaded({ id: campusId, data });
+      })
+      .catch((e) => {
+        if (!life.signal.aborted) setError(e.message);
+      });
+    return () => life.abort();
+  }, [campusId, definition]);
   useCampusTools(campus, setSelected);
   const [session, setSession] = useState<ConnectorSession | null>(null),
     [connectionMessage, setConnectionMessage] = useState('');
@@ -70,7 +91,20 @@ export default function Home() {
     );
   };
   const [assetMode, setAssetMode] = useState('buildings');
-  const charging = useCharging(evCharging ? session : null, expireSession);
+  const charging = useCharging(
+    evCharging ? session : null,
+    expireSession,
+    campusId,
+  );
+  const changeCampus = (id: string) => {
+    if (!isCampusId(id)) return;
+    setCampusId(id);
+    setSelected(CAMPUSES[id].initialBuilding);
+    setAssetMode('buildings');
+    setQuery('');
+    setError('');
+    setReset((n) => n + 1);
+  };
   const stations = evCharging ? charging.data?.stations || [] : [];
   const station = stations.find((s) => s.id === selected);
   const toggleEvCharging = (show: boolean) => {
@@ -79,11 +113,13 @@ export default function Home() {
       setAssetMode('buildings');
       setQuery('');
     }
-    if (!show && selected.startsWith('ev-')) setSelected('sfu-55');
+    if (!show && selected.startsWith('ev-'))
+      setSelected(definition.initialBuilding);
   };
   const chooseBuilding = (id: string) => {
     if (id.startsWith('ev-') && !evCharging) return;
     setSelected(id);
+    setSelectionRevision((n) => n + 1);
     setAssetMode(id.startsWith('ev-') ? 'charging' : 'buildings');
     setInspectorTab('inspect');
   };
@@ -109,7 +145,8 @@ export default function Home() {
           />
           <div>
             <strong>
-              Burnaby<span className="brand-separator">/</span>Campus twin
+              {definition.name}
+              <span className="brand-separator">/</span>Campus twin
             </strong>
             <small>SIMON FRASER UNIVERSITY · EXPLORATORY MODEL</small>
           </div>
@@ -123,7 +160,7 @@ export default function Home() {
           </span>
           <a
             className="quiet-button"
-            href={assetPath('data/sfu-burnaby.glb')}
+            href={assetPath(`${definition.directory}/sfu-${campusId}.glb`)}
             download
           >
             <Download size={16} /> Export model
@@ -132,6 +169,21 @@ export default function Home() {
       </header>
       <div className="workspace">
         <aside className="asset-panel">
+          <label className="campus-picker" htmlFor="campus-select">
+            <span className="eyebrow">CAMPUS</span>
+            <select
+              id="campus-select"
+              value={campusId}
+              onChange={(event) => changeCampus(event.target.value)}
+            >
+              {CAMPUS_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {CAMPUSES[id].name}
+                  {id === 'vancouver' ? ' · Downtown' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="panel-heading">
             <div>
               <span className="eyebrow">CAMPUS EXPLORER</span>
@@ -149,7 +201,8 @@ export default function Home() {
               onClick={() => {
                 setAssetMode('buildings');
                 setQuery('');
-                if (selected.startsWith('ev-')) setSelected('sfu-55');
+                if (selected.startsWith('ev-'))
+                  setSelected(definition.initialBuilding);
               }}
             >
               <Building2 size={15} />
@@ -280,7 +333,11 @@ export default function Home() {
                   <span>
                     <strong>{b.name}</strong>
                     <small>
-                      {b.abbr} · {b.buildingCode}
+                      {b.abbr}
+                      {b.buildingCode
+                        ? ` · ${b.buildingCode}`
+                        : ' · Affiliated site'}
+                      {b.kind === 'plaza' ? ' · Outdoor plaza' : ''}
                     </small>
                   </span>
                   <ChevronRight size={14} />
@@ -301,32 +358,35 @@ export default function Home() {
             <span>
               {assetMode === 'charging'
                 ? 'ChargePoint · private connection'
-                : 'Official SFU footprints'}
+                : definition.registry}
               <br />
               <small>
                 {assetMode === 'charging'
                   ? '60 s polling · this paired tab'
-                  : 'Retrieved September 5, 2026'}
+                  : `Retrieved ${definition.retrieved}`}
               </small>
             </span>
           </div>
         </aside>
         <section className="model-panel" aria-label="3D campus model">
           <div className="scene-heading">
-            <span className="eyebrow">BURNABY MOUNTAIN</span>
+            <span className="eyebrow">{definition.heading}</span>
             <h2>A campus, in context.</h2>
-            <p>49.279° N &nbsp; 122.919° W</p>
+            <p>{definition.coordinates}</p>
           </div>
           {campus ? (
             <CampusViewer
+              key={campusId}
+              campusId={campusId}
               campus={campus}
               selected={selected}
+              selectionRevision={selectionRevision}
               onSelect={chooseBuilding}
               chargingStations={stations}
               chargingStale={charging.stale}
               chargingClock={charging.clock}
               showCharging={evCharging && !!session}
-              aerial={aerial}
+              aerial={aerial && !!definition.aerial}
               context={context}
               view={view}
               reset={reset}
@@ -396,7 +456,9 @@ export default function Home() {
                   {station
                     ? 'CHARGEPOINT STATION'
                     : building && assetMode === 'buildings'
-                      ? 'SELECTED BUILDING'
+                      ? building.kind === 'plaza'
+                        ? 'SELECTED PLAZA'
+                        : 'SELECTED BUILDING'
                       : 'CAMPUS OPERATIONS'}
                 </span>
                 <h2>
@@ -412,9 +474,22 @@ export default function Home() {
                     : assetMode === 'charging'
                       ? 'Private station locations, status and power.'
                       : building
-                        ? `${building.abbr} · Building ${building.buildingCode || 'unassigned'}`
+                        ? `${building.abbr}${building.buildingCode ? ` · Building ${building.buildingCode}` : ' · Affiliated site'}`
                         : 'Select a building to inspect its geometry and source information.'}
                 </p>
+                {assetMode === 'buildings' && building?.occupancy && (
+                  <div className="site-note">
+                    <strong>{building.address}</strong>
+                    <p>{building.occupancy}</p>
+                    <a
+                      href={building.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      SFU location details <ArrowUpRight size={13} />
+                    </a>
+                  </div>
+                )}
                 {assetMode === 'buildings' && (
                   <div className="metric-grid">
                     <div>
@@ -430,7 +505,13 @@ export default function Home() {
                     </div>
                     <div>
                       <small>
-                        {building ? 'Model height' : 'Context features'}
+                        {building
+                          ? building.kind === 'plaza'
+                            ? 'Surface offset'
+                            : building.parts && building.parts.length > 1
+                              ? 'Maximum model height'
+                              : 'Model height'
+                          : 'Context features'}
                       </small>
                       <strong>
                         {building
@@ -446,8 +527,15 @@ export default function Home() {
                     <Mountain size={17} />
                     <span>
                       {building.heightStatus}
+                      {building.parts && building.parts.length > 1 && (
+                        <small>
+                          {building.parts.length} roof sections ·{' '}
+                          {Math.min(...building.parts.map((p) => p.heightM))}–
+                          {building.heightM} m
+                        </small>
+                      )}
                       <small>
-                        Ground {building.groundM} m · contour-derived
+                        Ground {building.groundM} m · {definition.groundLabel}
                       </small>
                     </span>
                   </div>
@@ -459,7 +547,8 @@ export default function Home() {
                 />
                 {session && evCharging && assetMode === 'charging' && (
                   <ChargingPanel
-                    key={session.token + station?.id}
+                    key={campusId + session.token + station?.id}
+                    campusId={campusId}
                     station={station}
                     inventory={charging.data}
                     session={session}
@@ -468,7 +557,7 @@ export default function Home() {
                 )}
                 {session && facilitiesMetering && assetMode === 'buildings' && (
                   <EnergyPanel
-                    key={session.token + building?.buildingCode}
+                    key={campusId + session.token + building?.id}
                     building={building}
                     session={session}
                     onSessionEnded={expireSession}
@@ -483,8 +572,9 @@ export default function Home() {
                 <div className="quality-note">
                   <span className="eyebrow">MODEL CONFIDENCE</span>
                   <p>
-                    Official footprints. Interpolated terrain. Approximate
-                    heights. Roof details and façades need LiDAR or BIM.
+                    {campusId === 'burnaby'
+                      ? 'Official footprints. Interpolated terrain. Approximate heights. Roof details and façades need LiDAR or BIM.'
+                      : 'Public SFU and city footprints. Approximate exterior heights and ground. Shared buildings include space occupied by other tenants.'}
                   </p>
                 </div>
               </div>
@@ -537,19 +627,23 @@ export default function Home() {
                 <label className="layer-row" htmlFor="layer-aerial">
                   <span>
                     <strong>Aerial imagery</strong>
-                    <small>City of Burnaby · 2025</small>
+                    <small>{definition.imageryLabel}</small>
                   </span>
                   <Switch
                     id="layer-aerial"
                     aria-label="Aerial imagery"
-                    checked={aerial}
+                    checked={aerial && !!definition.aerial}
+                    disabled={!definition.aerial}
                     onCheckedChange={setAerial}
                   />
                 </label>
                 <label className="layer-row" htmlFor="layer-context">
                   <span>
                     <strong>Surrounding buildings</strong>
-                    <small>Burnaby open data</small>
+                    <small>
+                      {definition.city} open data
+                      {campusId === 'vancouver' ? ' · historical 2009' : ''}
+                    </small>
                   </span>
                   <Switch
                     id="layer-context"
@@ -567,15 +661,14 @@ export default function Home() {
                     SFU mapping services
                     <ArrowUpRight size={16} />
                   </a>
-                  <a
-                    href="https://viewsfu.its.sfu.ca/apps/vertisee/public/"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Working ViewSFU map
+                  <a href={definition.mapUrl} target="_blank" rel="noreferrer">
+                    Campus locations
                     <ArrowUpRight size={16} />
                   </a>
-                  <a href={assetPath('data/sources.json')} target="_blank">
+                  <a
+                    href={assetPath(`${definition.directory}/sources.json`)}
+                    target="_blank"
+                  >
                     Source manifest
                     <ArrowUpRight size={16} />
                   </a>
@@ -599,8 +692,16 @@ export default function Home() {
             : 'Public campus geometry'}
         </span>
         <span>
-          SFU Facilities Services · Contains information licensed under the Open
-          Government Licence – City of Burnaby
+          SFU Facilities Services · {definition.attribution}
+          {campus?.attributions?.map((source) => (
+            <span key={source.url}>
+              {' '}
+              ·{' '}
+              <a href={source.url} target="_blank" rel="noreferrer">
+                {source.text}
+              </a>
+            </span>
+          ))}
         </span>
       </footer>
     </main>

@@ -2,6 +2,7 @@ import http from 'node:http';
 import {randomBytes, timingSafeEqual} from 'node:crypto';
 import {relayPage} from './relay-page.mjs';
 import {readBuilding} from '../lib/foreseer.ts';
+import {isCampusId} from '../lib/campuses.ts';
 import {chargePointSetupPage} from './chargepoint-setup-page.mjs';
 
 const randomToken = () => randomBytes(24).toString('base64url');
@@ -92,9 +93,12 @@ export function createConnector({config, charging, allowedOrigins = DEFAULT_ORIG
       if (req.method === 'DELETE') { sessions.delete(token); return send(res, 204, ''); }
       if(url.pathname.startsWith('/v1/charging')) {
         const id=url.searchParams.get('id');
-        if(url.pathname==='/v1/charging'?!!url.search:!id||!/^ev-[a-f0-9]{24}$/.test(id)||url.searchParams.size!==1)return send(res,400,{error:'Invalid charging request.'});
+        const campusId=url.searchParams.get('campus')??'burnaby';
+        const detail=url.pathname==='/v1/charging/station';
+        const keys=[...url.searchParams.keys()];
+        if(!isCampusId(campusId)||new Set(keys).size!==keys.length||keys.some(k=>k!=='campus'&&!(detail&&k==='id'))||(detail&&(!id||!/^ev-[a-f0-9]{24}$/.test(id))))return send(res,400,{error:'Invalid charging request.'});
         if(!charging)return send(res,200,{status:'not_configured',observedAt:new Date(now()).toISOString(),stations:[],message:'ChargePoint setup is not available in this connector.'});
-        const data=url.pathname==='/v1/charging'?await charging.getSnapshot():await charging.getStation(id);
+        const data=url.pathname==='/v1/charging'?await charging.getSnapshot(campusId):await charging.getStation(id,campusId);
         if(!sessions.has(token)||session.expires<=now())return send(res,401,{error:'Session ended.'});
         return send(res,200,data);
       }

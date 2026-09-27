@@ -18,7 +18,7 @@ ChargePoint has separate production endpoints for Canada (`webservices-ca.charge
 
 ## Map and colour rules
 
-The connector searches the account's accessible stations in Burnaby and retains those whose coordinates fall within the existing campus model extent. Missing or out-of-bounds coordinates are excluded. ChargePoint coordinates are projected into the campus NAD83 / UTM zone 10N coordinate system and placed on the interpolated terrain. Markers indicate reported locations, not surveyed equipment dimensions or parking-floor elevations.
+The connector searches the account’s accessible stations in the selected campus city (Burnaby, Vancouver or Surrey) and retains those whose coordinates fall within that model’s extent. These rectangular study areas are not property boundaries: stations can belong to shared premises or other operators. Account permissions and an optional station group further constrain results. Missing or out-of-bounds coordinates are excluded. ChargePoint coordinates are projected into the campus NAD83 / UTM zone 10N coordinate system and placed on the interpolated terrain. Markers indicate reported locations, not surveyed equipment dimensions or parking-floor elevations.
 
 | Colour | Per-port rule |
 | --- | --- |
@@ -37,15 +37,15 @@ The adapter supports three read-only Web Services operations: `getStations`, `ge
 
 If ChargePoint explicitly reports that the Cloud Plan does not permit `getLoad`, the viewer keeps available station/session status and explains why power is missing. Active sessions stay grey until live power is available; they are never assigned a zero or an overstay from a denied request. The connector backs off plan-denied load requests for 60 seconds. A successful empty station search is reported as an empty inventory, not an authentication failure.
 
-Station inventory is cached in memory for 15 minutes; status and power for 60 seconds. Status reads are batched by station IDs. With a configured station group, one group load request is used; otherwise load is fetched per displayed station. Upstream concurrency is limited to four, with eight-second individual timeouts and a 22-second snapshot deadline. Incomplete results are marked partial. A selected station has an independent 60-second cache.
+Each campus has a separate inventory and selected-station cache. Switching campuses aborts browser requests and immediately removes previous-campus observations. Station IDs are accepted only within the requested campus’s discovered inventory. Station inventory is cached in memory for 15 minutes; status and power for 60 seconds. Status reads are batched by station IDs. With a configured station group, one group load request is used; otherwise load is fetched per displayed station. Upstream concurrency is limited to four, with eight-second individual timeouts and a 22-second snapshot deadline. Incomplete results are marked partial. A selected station has an independent 60-second cache.
 
 Only station display name, coordinates, an opaque local station key, port number, bounded status, power in kW, observation/communication times and a session boolean/evidence label are passed to the browser. Raw SOAP, API credentials, upstream station IDs, session IDs, user/driver details, vehicle identifiers, card identifiers and payment data are excluded. Provider errors are replaced with generic messages. Readings are not written to disk or logged.
 
-- `GET /v1/charging`: authenticated campus station snapshot.
-- `GET /v1/charging/station?id=ev-…`: authenticated per-station reading, restricted to the local inventory.
+- `GET /v1/charging?campus=surrey`: authenticated campus station snapshot.
+- `GET /v1/charging/station?id=ev-…&campus=surrey`: authenticated per-station reading, restricted to the local inventory.
 - `/chargepoint/setup`: local-only setup form; no credential read-back route.
 
-Both read routes require the existing paired session and origin checks. A disconnected session cannot receive a pending response. The local connection window only exposes these fixed operations; the browser cannot choose provider endpoints, SOAP operations or raw station IDs.
+The only accepted campus values are `burnaby`, `vancouver`, and `surrey`; omitting the parameter retains legacy Burnaby behavior. Unknown or repeated parameters are rejected. Both read routes require the existing paired session and origin checks. A disconnected session cannot receive a pending response. The local connection window only exposes these fixed operations; the browser cannot choose provider endpoints, SOAP operations or raw station IDs.
 
 ## Verification
 

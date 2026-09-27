@@ -1,4 +1,5 @@
 import proj4 from 'proj4';
+import { CAMPUSES, isCampusId, type CampusId } from './campuses.ts';
 import type { Terrain } from './campus-types';
 const utm10 = '+proj=utm +zone=10 +datum=NAD83 +units=m +no_defs';
 export function projectChargingLocation(
@@ -7,7 +8,12 @@ export function projectChargingLocation(
 ): [number, number] {
   return proj4('EPSG:4326', utm10, [longitude, latitude]) as [number, number];
 }
-export function withinCampus(longitude: number, latitude: number) {
+export function withinCampus(
+  longitude: number,
+  latitude: number,
+  campusId: CampusId = 'burnaby',
+) {
+  if (!isCampusId(campusId)) return false;
   if (
     !Number.isFinite(longitude) ||
     !Number.isFinite(latitude) ||
@@ -16,7 +22,8 @@ export function withinCampus(longitude: number, latitude: number) {
   )
     return false;
   const [x, y] = projectChargingLocation(longitude, latitude);
-  return x >= 504800 && x <= 507150 && y >= 5457550 && y <= 5458900;
+  const [west, south, east, north] = CAMPUSES[campusId].bounds;
+  return x >= west && x <= east && y >= south && y <= north;
 }
 export function chargingPosition(
   longitude: number,

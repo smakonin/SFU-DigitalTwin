@@ -5,10 +5,12 @@ import {
   readCharging,
   type ConnectorSession,
 } from '@/lib/local-connector';
+import type { CampusId } from '@/lib/campuses';
 import type { ChargingResponse } from '@/lib/charging';
 export function useCharging(
   session: ConnectorSession | null,
   onSessionEnded: () => void,
+  campusId: CampusId = 'burnaby',
 ) {
   const ended = useRef(onSessionEnded);
   useEffect(() => {
@@ -16,9 +18,14 @@ export function useCharging(
   }, [onSessionEnded]);
   const [result, setResult] = useState<{
       token: string;
+      campusId: CampusId;
       data: ChargingResponse;
     } | null>(null),
-    [error, setError] = useState(''),
+    [failure, setFailure] = useState<{
+      token: string;
+      campusId: CampusId;
+      message: string;
+    } | null>(null),
     [busy, setBusy] = useState(false),
     [retry, setRetry] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
@@ -32,7 +39,7 @@ export function useCharging(
       queueMicrotask(() => {
         if (!cancelled) {
           setResult(null);
-          setError('');
+          setFailure(null);
           setBusy(false);
         }
       });
@@ -45,10 +52,10 @@ export function useCharging(
     const poll = async () => {
       setBusy(true);
       try {
-        const data = await readCharging(session, life.signal);
+        const data = await readCharging(session, life.signal, campusId);
         if (!life.signal.aborted) {
-          setResult({ token: session.token, data });
-          setError('');
+          setResult({ token: session.token, campusId, data });
+          setFailure(null);
         }
       } catch (error) {
         if (!life.signal.aborted) {
@@ -57,9 +64,12 @@ export function useCharging(
             ended.current();
             return;
           }
-          setError(
-            'ChargePoint connection interrupted. Check the local connector.',
-          );
+          setFailure({
+            token: session.token,
+            campusId,
+            message:
+              'ChargePoint connection interrupted. Check the local connector.',
+          });
         }
       } finally {
         if (!life.signal.aborted) {
@@ -70,7 +80,7 @@ export function useCharging(
     };
     queueMicrotask(() => {
       if (!life.signal.aborted) {
-        setError('');
+        setFailure(null);
         void poll();
       }
     });
@@ -78,12 +88,21 @@ export function useCharging(
       life.abort();
       clearTimeout(timer);
     };
-  }, [session, retry]);
+  }, [session, retry, campusId]);
+  const data =
+    session && result?.token === session.token && result.campusId === campusId
+      ? result.data
+      : null;
   return {
-    data: session && result?.token === session.token ? result.data : null,
+    data,
     clock,
-    stale: !!result && clock - Date.parse(result.data.observedAt) > 120000,
-    error: session ? error : '',
+    stale: !!data && clock - Date.parse(data.observedAt) > 120000,
+    error:
+      session &&
+      failure?.token === session.token &&
+      failure.campusId === campusId
+        ? failure.message
+        : '',
     busy: !!session && busy,
     refresh: () => setRetry((n) => n + 1),
   };

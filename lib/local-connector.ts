@@ -1,3 +1,4 @@
+import type {CampusId} from './campuses';
 import type {EnergyResponse} from './energy';
 import type {ChargingResponse,ChargingStationResponse} from './charging';
 export const CONNECTOR_URL = 'http://127.0.0.1:8787';
@@ -7,7 +8,7 @@ type RelayMessage={type:string;nonce:string;id?:string;result?:unknown;error?:{m
 type Pending={resolve:(value:unknown)=>void;reject:(reason:Error)=>void;cleanup:()=>void};
 type Relay={popup:Window;nonce:string;pending:Map<string,Pending>;dispose:()=>void;ready:Promise<void>};
 const relays=new Map<string,Relay>();
-function request(relay:Relay,operation:string,code?:string,signal?:AbortSignal):Promise<unknown> {
+function request(relay:Relay,operation:string,code?:string,signal?:AbortSignal,campus?:CampusId):Promise<unknown> {
   if(relay.popup.closed)return Promise.reject(new ConnectorError('The local connection window was closed. Pair this tab again.',401));
   if(signal?.aborted)return Promise.reject(new DOMException('Request cancelled','AbortError'));
   return new Promise((resolve,reject)=>{
@@ -17,7 +18,7 @@ function request(relay:Relay,operation:string,code?:string,signal?:AbortSignal):
     const timeout=setTimeout(()=>finish(new ConnectorError('The local connection window is not responding. Check that it is open and the connector is running.')),35_000);
     const cleanup=()=>{clearTimeout(timeout);signal?.removeEventListener('abort',abort);relay.pending.delete(id);};
     relay.pending.set(id,{resolve,reject,cleanup});signal?.addEventListener('abort',abort,{once:true});
-    relay.popup.postMessage({type:'sfu-relay-request',nonce:relay.nonce,id,operation,code},CONNECTOR_URL);
+    relay.popup.postMessage({type:'sfu-relay-request',nonce:relay.nonce,id,operation,code,campus},CONNECTOR_URL);
   });
 }
 export async function pairConnector(code:string,signal?:AbortSignal):Promise<ConnectorSession> {
@@ -56,11 +57,11 @@ export async function disconnectConnector(session:ConnectorSession) {
   const relay=relays.get(session.token);if(!relay)return;
   try{await request(relay,'disconnect');}finally{relay.dispose();}
 }
-export async function readCharging(session:ConnectorSession,signal:AbortSignal):Promise<ChargingResponse> {
+export async function readCharging(session:ConnectorSession,signal:AbortSignal,campus:CampusId='burnaby'):Promise<ChargingResponse> {
   const relay=relays.get(session.token);if(!relay)throw new ConnectorError('Local session ended.',401);
-  return await request(relay,'charging',undefined,signal) as ChargingResponse;
+  return await request(relay,'charging',undefined,signal,campus) as ChargingResponse;
 }
-export async function readChargingStation(session:ConnectorSession,id:string,signal:AbortSignal):Promise<ChargingStationResponse> {
+export async function readChargingStation(session:ConnectorSession,id:string,signal:AbortSignal,campus:CampusId='burnaby'):Promise<ChargingStationResponse> {
   const relay=relays.get(session.token);if(!relay)throw new ConnectorError('Local session ended.',401);
-  return await request(relay,'charging-station',id,signal) as ChargingStationResponse;
+  return await request(relay,'charging-station',id,signal,campus) as ChargingStationResponse;
 }

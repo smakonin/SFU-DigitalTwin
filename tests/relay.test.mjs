@@ -37,3 +37,11 @@ test('EV relay uses only fixed read routes and refuses unsafe station identifier
   await r.message('charging-station',{code:'ev-x&url=https://attacker.example'});assert.equal(r.calls.length,3);
   assert(!JSON.stringify(r.messages).includes('private-test-bearer'));
 });
+
+test('relay passes only a fixed campus identifier to local charging routes',async()=>{
+ const r=setup();await r.message('pair',{code:'test'});
+ await r.message('charging',{campus:'vancouver'});assert.equal(r.calls[1].path,'/v1/charging?campus=vancouver');
+ await r.message('charging-station',{code:'ev-'+'a'.repeat(24),campus:'surrey'});assert.equal(r.calls[2].path,'/v1/charging/station?id=ev-'+'a'.repeat(24)+'&campus=surrey');
+ for(const campus of ['__proto__','surrey&url=bad',null,{},['surrey']])await r.message('charging',{campus});
+ assert.equal(r.calls.length,3);
+});

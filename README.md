@@ -1,10 +1,10 @@
-# SFU Burnaby Campus Twin
+# SFU Campus Twin
 
-An interactive 3D campus model with optional private live energy readings. The static viewer is hosted on [GitHub Pages](https://makonin.com/SFU-DigitalTwin/). A separate read-only connector on the viewer’s computer uses its SFU campus or VPN connection.
+Interactive 3D models of SFU Burnaby, Vancouver and Surrey campuses with optional private live energy readings. The static viewer is hosted on [GitHub Pages](https://makonin.com/SFU-DigitalTwin/). A separate read-only connector on the viewer’s computer uses its SFU campus or VPN connection.
 
 The EV charging layer supports ChargePoint locations, per-port power, session status and overstay colours through the local connector. Enter API credentials only in the [local setup form](http://127.0.0.1:8787/chargepoint/setup); they are stored outside the project in this Mac's private application settings. See [ChargePoint setup and colour rules](docs/CHARGEPOINT.md).
 
-The model contains 77 official SFU features, 127 surrounding footprints, contour-derived terrain and Burnaby 2025 aerial imagery. Heights and roofs are approximate exterior massing. The supplied official SFU logo is in `public/brand/`.
+Use the **Campus** selector to switch between Burnaby (77 campus features), Vancouver (nine listed locations) and Surrey (four building locations and the outdoor plaza). Each campus has surrounding buildings and its own downloadable GLB model. Burnaby includes contour-derived terrain and 2025 aerial imagery. Vancouver and Surrey use estimated ground from municipal building-base elevations; no aerial imagery is included for them. Vancouver heights/context use historical 2009 data and may predate redevelopment. Heights and roofs are approximate exterior massing. The supplied official SFU logo is in `public/brand/`.
 
 ## Use the hosted viewer
 
@@ -27,7 +27,7 @@ Open the viewer at **http://127.0.0.1:4173/SFU-DigitalTwin/**. Select **Connect 
 
 The code is single-use and expires after 10 minutes. A paired session lasts up to eight hours, stays in that tab’s memory and clears on reload. **Disconnect live data** immediately removes displayed readings and revokes the session. The connector must remain running, and its computer must retain SFU network access.
 
-Choose **Layers** beside the 3D/Plan controls, or open **Layers & sources**, to show or hide **Facilities Metering** and **EV Charging** independently. Facilities Metering controls meter readings and demand charts; EV Charging controls station markers, the station list, port details and the colour legend. Hidden layers stop polling and discard their displayed readings. Showing a layer resumes reads through the existing pairing. Both layers start shown when the viewer opens. Campus geometry stays visible; aerial imagery and surrounding buildings have separate controls.
+Choose **Layers** beside the 3D/Plan controls, or open **Layers & sources**, to show or hide **Facilities Metering** and **EV Charging** independently. Facilities Metering controls meter readings and demand charts; EV Charging controls station markers, the station list, port details and the colour legend. Hidden layers stop polling and discard their displayed readings. Showing a layer resumes reads through the existing pairing. Switching campus preserves pairing and layer preferences, clears displayed observations, and requests only the selected campus’s inventory. Facilities readings use existing private mappings for official building codes; adding geometry does not establish meter coverage. Both layers start shown when the viewer opens. Campus geometry stays visible; aerial imagery and surrounding buildings have separate controls.
 
 ## Run components separately
 
@@ -72,6 +72,12 @@ Python dependencies: numpy, scipy, shapely, pyproj. Geometry generation uses pub
 python3 scripts/acquire-data.py
 python3 scripts/build-model.py
 node --experimental-strip-types scripts/export-model.mjs
+
+# Vancouver and Surrey
+python3 scripts/acquire-multicampus.py
+python3 scripts/build-multicampus.py
+node --experimental-strip-types scripts/export-model.mjs vancouver
+node --experimental-strip-types scripts/export-model.mjs surrey
 ```
 
 See [the unsent data request](docs/SFU-DATA-REQUEST-DRAFT.md) for obtaining the surveyed detail needed for a more complete digital twin.

@@ -406,3 +406,33 @@ test('overstay colour rule keeps zero, unknown, stale and no-session states dist
   );
   assert.equal(chargingStationState({ ports: [] }), 'unknown');
 });
+
+test('campus discovery filters each city, rejects unknown scopes and isolates station details', async () => {
+  const positions={burnaby:[-122.919,49.279],vancouver:[-123.112,49.284],surrey:[-122.849,49.187]};
+  for(const [campusId,[lon,lat]] of Object.entries(positions)) {
+    for(const [other,[x,y]] of Object.entries(positions))assert.equal(withinCampus(x,y,campusId),other===campusId);
+    const scoped=inventoryXml.replaceAll('49.279',String(lat)).replaceAll('-122.919',String(lon));
+    let discovery=0;
+    const client=createChargePointClient(config,{campusId,fetchImpl:async(url,init)=>{
+      const method=init.headers.SOAPAction.match(/\/(get\w+)"/)[1];
+      if(method==='getStations') {discovery++;assert(init.body.includes(`<City>${campusId[0].toUpperCase()+campusId.slice(1)}</City>`));return response(method,scoped+(campusId==='burnaby'?'':inventoryXml.replaceAll('1:999999','1:999998')));}
+      return response(method,method==='getStationStatus'?statusXml:loadXml);
+    }});
+    const snapshot=await client.getSnapshot();assert.equal(snapshot.stations.length,1);assert.equal(snapshot.stations[0].longitude,lon);
+    await client.getSnapshot();assert.equal(discovery,1);
+    await assert.rejects(()=>client.getStation('ev-'+'b'.repeat(24)));
+  }
+  assert.equal(withinCampus(-123.112,49.284,'__proto__'),false);
+  assert.throws(()=>createChargePointClient(config,{campusId:'arbitrary'}));
+});
+test('private credential store keeps separate campus caches and clears all on credential changes', async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sfu-campus-test-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const created=[];
+  const store=createChargePointStore(path.join(dir,'settings','chargepoint.json'),(config,{campusId})=>{created.push(campusId);return {getSnapshot:async()=>({status:'connected',stations:[],campusId}),getStation:async id=>({campusId,id})};});
+  store.save(config);
+  for(const campusId of ['burnaby','vancouver','surrey'])assert.equal((await store.getSnapshot(campusId)).campusId,campusId);
+  await store.getSnapshot('vancouver');assert.equal(created.length,3);
+  assert.equal((await store.getStation('synthetic-id','surrey')).campusId,'surrey');
+  assert.equal((await store.getSnapshot('invalid')).status,'unavailable');assert.equal(created.length,3);
+  store.save(config);await store.getSnapshot('vancouver');assert.equal(created.length,4);
+});

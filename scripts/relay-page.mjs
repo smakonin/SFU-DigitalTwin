@@ -22,7 +22,9 @@ window.addEventListener('message',async event=>{
   }else if(d.operation==='charging'||d.operation==='charging-station'){
    if(!session){const error=Error('Local session ended.');error.status=401;throw error;}
    if(d.operation==='charging-station'&&(typeof d.code!=='string'||!/^ev-[a-f0-9]{24}$/.test(d.code)))throw Error('Invalid station.');
-   const path=d.operation==='charging'?'/v1/charging':'/v1/charging/station?id='+d.code;
+   if(d.campus!==undefined&&!['burnaby','vancouver','surrey'].includes(d.campus))throw Error('Invalid campus.');
+   let path=d.operation==='charging'?'/v1/charging':'/v1/charging/station?id='+d.code;
+   if(d.campus!==undefined)path+=(d.operation==='charging'?'?':'&')+'campus='+d.campus;
    const result=await request(path,{headers:{Authorization:'Bearer '+session.token}});reply(d.id,result);
   }else if(d.operation==='disconnect'){await disconnect();reply(d.id,{disconnected:true});window.close();}
   else throw Error('Unknown request.');
